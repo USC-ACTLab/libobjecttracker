@@ -1,0 +1,137 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="joy_dev" default="/dev/input/js0" />
+
+  <arg name="uri1" default="radio://0/80/2M/E7E7E7E701" />
+  <arg name="frame1" default="crazyflie1" />
+  <arg name="x1" default="0" />
+  <arg name="y1" default="0.0" />
+  <arg name="z1" default="0.5" />
+
+  <arg name="uri2" default="radio://1/90/2M/E7E7E7E703" />
+  <arg name="frame2" default="crazyflie2" />
+  <arg name="x2" default="0" />
+  <arg name="y2" default="-0.75" />
+  <arg name="z2" default="0.5" />
+
+  <arg name="uri3" default="radio://1/90/2M/E7E7E7E703" />
+  <arg name="frame3" default="crazyflie3" />
+  <arg name="x3" default="0" />
+  <arg name="y3" default="0.75" />
+  <arg name="z3" default="0.5" />
+
+  <include file="$(find crazyflie_driver)/launch/crazyflie_server.launch">
+<!--     <arg name="crazyflieSDK" value="$(arg crazyflieSDK)" /> -->
+  </include>
+
+  <node name="joy" pkg="joy" type="joy_node" output="screen">
+    <param name="dev" value="$(arg joy_dev)" />
+  </node>
+
+  <group ns="crazyflie1">
+    <node pkg="crazyflie_driver" type="crazyflie_add" name="crazyflie_add" output="screen">
+      <param name="uri" value="$(arg uri1)" />
+      <param name="tf_prefix" value="crazyflie1" />
+      <rosparam>
+        genericLogTopics: ["stabilizer"]
+        genericLogTopicFrequencies: [10]
+        genericLogTopic_stabilizer_Variables: ["stabilizer.roll", "stabilizer.pitch", "stabilizer.yaw"]
+      </rosparam>
+    </node>
+
+    <node name="joystick_controller" pkg="crazyflie_demo" type="controller.py" output="screen">
+      <param name="use_crazyflie_controller" value="True" />
+      <param name="joy_topic" value="/joy" />
+    </node>
+
+    <include file="$(find crazyflie_controller)/launch/crazyflie2.launch">
+      <arg name="frame" value="$(arg frame1)" />
+    </include>
+
+    <node name="pose" pkg="crazyflie_demo" type="publish_pose.py" output="screen">
+      <param name="name" value="goal" />
+      <param name="rate" value="10" />
+      <param name="x" value="$(arg x1)" />
+      <param name="y" value="$(arg y1)" />
+      <param name="z" value="$(arg z1)" />
+    </node>
+
+    <node pkg="tf" type="static_transform_publisher" name="baselink_broadcaster" args="0 0 0 0 0 0 1 $(arg frame1) /crazyflie1/base_link 100" />
+  </group>
+
+  <group ns="crazyflie2">
+    <node pkg="crazyflie_driver" type="crazyflie_add" name="crazyflie_add" output="screen">
+      <param name="uri" value="$(arg uri2)" />
+      <param name="tf_prefix" value="crazyflie2" />
+      <rosparam>
+        genericLogTopics: ["stabilizer"]
+        genericLogTopicFrequencies: [10]
+        genericLogTopic_stabilizer_Variables: ["stabilizer.roll", "stabilizer.pitch", "stabilizer.yaw"]
+      </rosparam>
+    </node>
+
+    <node name="joystick_controller" pkg="crazyflie_demo" type="controller.py" output="screen">
+      <param name="use_crazyflie_controller" value="True" />
+      <param name="joy_topic" value="/joy" />
+    </node>
+
+    <include file="$(find crazyflie_controller)/launch/crazyflie2.launch">
+      <arg name="frame" value="$(arg frame2)" />
+<!--       <arg name="frequency" value="30" /> -->
+    </include>
+
+    <node name="pose" pkg="crazyflie_demo" type="publish_pose.py" output="screen">
+      <param name="name" value="goal" />
+      <param name="rate" value="10" />
+      <param name="x" value="$(arg x2)" />
+      <param name="y" value="$(arg y2)" />
+      <param name="z" value="$(arg z2)" />
+    </node>
+
+    <node pkg="tf" type="static_transform_publisher" name="baselink_broadcaster" args="0 0 0 0 0 0 1 $(arg frame2) /crazyflie2/base_link 100" />
+  </group>
+
+<!--   <group ns="crazyflie3">
+    <node pkg="crazyflie_driver" type="crazyflie_add" name="crazyflie_add" output="screen">
+      <param name="uri" value="$(arg uri3)" />
+      <param name="tf_prefix" value="crazyflie3" />
+      <rosparam>
+        genericLogTopics: ["stabilizer"]
+        genericLogTopicFrequencies: [10]
+        genericLogTopic_stabilizer_Variables: ["stabilizer.roll", "stabilizer.pitch", "stabilizer.yaw"]
+      </rosparam>
+    </node>
+
+    <node name="joystick_controller" pkg="crazyflie_demo" type="controller.py" output="screen">
+      <param name="use_crazyflie_controller" value="True" />
+      <param name="joy_topic" value="/joy" />
+    </node>
+
+    <include file="$(find crazyflie_controller)/launch/crazyflie2.launch">
+      <arg name="frame" value="$(arg frame3)" />
+      <arg name="frequency" value="30" />
+    </include>
+
+    <node name="pose" pkg="crazyflie_demo" type="publish_pose.py" output="screen">
+      <param name="name" value="goal" />
+      <param name="rate" value="10" />
+      <param name="x" value="$(arg x3)" />
+      <param name="y" value="$(arg y3)" />
+      <param name="z" value="$(arg z3)" />
+    </node>
+
+    <node pkg="tf" type="static_transform_publisher" name="baselink_broadcaster" args="0 0 0 0 0 0 1 $(arg frame3) /crazyflie3/base_link 100" />
+  </group> -->
+
+  <!-- run vicon bridge -->
+  <include file="$(find vicon_bridge)/launch/vicon.launch"/>
+
+  <node name="object_tracker" pkg="object_tracker" type="object_tracker_node" output="screen">
+    <rosparam command="load" file="$(find object_tracker)/launch/cf2.yaml" />
+  </node>
+
+  <!-- run rviz -->
+  <param name="robot_description" command="$(find xacro)/xacro.py $(find crazyflie_description)/urdf/crazyflie.urdf.xacro" />
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find object_tracker)/launch/crazyflie_pos_multi.rviz" required="true" />
+
+</launch>

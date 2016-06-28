@@ -1,0 +1,35 @@
+hostName: vicon
+numMarkerConfigurations: 1
+markerConfigurations:
+  "0":
+    numPoints: 4
+    points:
+      "0": [0.009475,0.013660,0.023648]
+      "1": [-0.021702,0.027433,0.019438]
+      "2": [-0.020826,-0.019418,0.019506]
+      "3": [0.022304,-0.013999,0.017704]
+numDynamicsConfigurations: 1
+dynamicsConfigurations:
+  "0":
+    maxXVelocity: 2.0
+    maxYVelocity: 2.0
+    maxZVelocity: 2.0
+    maxPitchRate: 20.0
+    maxRollRate: 20.0
+    maxYawRate: 5.0
+    maxRoll: 0.4
+    maxPitch: 0.4
+numObjects: 1
+objects:
+  "0":
+    name: tracker_test1
+    markerConfiguration: 0
+    dynamicsConfiguration: 0
+    initialPosition: [0, 0, 0]
+    initialYaw: 0
+  "1":
+    name: tracker_test2
+    markerConfiguration: 0
+    dynamicsConfiguration: 0
+    initialPosition: [0, 0.75, 0]
+    initialYaw: 0
