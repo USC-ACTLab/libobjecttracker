@@ -1,20 +1,15 @@
 #include "ros/ros.h"
-#include "vicon_bridge/Marker.h"
-#include "vicon_bridge/Markers.h"
+#include <sensor_msgs/PointCloud.h>
 
-
-void markersCallback(const vicon_bridge::Markers::ConstPtr& msg)
+void pointCloudCallback(const sensor_msgs::PointCloud::ConstPtr pointCloud)
 {
   ROS_INFO("Received Markers");
-  // for (const vicon_bridge::Marker& marker : msg->markers) {
-  for (size_t i = 0; i < msg->markers.size(); ++i) {
-    const vicon_bridge::Marker& marker = msg->markers[i];
-    if (marker.subject_name == "cf_config1") {
-      ROS_INFO("[%f,%f,%f]",
-        marker.translation.x / 1000.0,
-        marker.translation.y / 1000.0,
-        marker.translation.z / 1000.0);
-    }
+
+  for(size_t i = 0; i < pointCloud->points.size(); ++i) {
+    ROS_INFO("[%f,%f,%f]",
+      pointCloud->points[i].x / 1000.0,
+      pointCloud->points[i].y / 1000.0,
+      pointCloud->points[i].z / 1000.0);
   }
 }
 
@@ -24,7 +19,7 @@ int main(int argc, char **argv)
 
   ros::NodeHandle n;
 
-  ros::Subscriber sub = n.subscribe("/vicon/markers", 1, markersCallback);
+  ros::Subscriber sub = n.subscribe("/vicon/pointCloud", 1, pointCloudCallback);
 
   ros::spin();
 

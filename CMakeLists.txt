@@ -159,16 +159,14 @@ target_link_libraries(object_tracker_node
   ViconDataStreamSDK_CPP
 )
 
-# Disable configuration node for now; this needs to be rewritten to use the VICON_SDK directly
-#  or based on vicon_bridge
-# add_executable(
-#   configuration_node
-#   src/configuration_node.cpp
-# )
+add_executable(
+  configuration_node
+  src/configuration_node.cpp
+)
 
-# target_link_libraries(configuration_node
-#   ${catkin_LIBRARIES}
-# )
+target_link_libraries(configuration_node
+  ${catkin_LIBRARIES}
+)
 
 #############
 ## Install ##
