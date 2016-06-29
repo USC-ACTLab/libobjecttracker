@@ -22,14 +22,14 @@
 
 struct DynamicsConfiguration
 {
-  float maxXVelocity;
-  float maxYVelocity;
-  float maxZVelocity;
-  float maxPitchRate;
-  float maxRollRate;
-  float maxYawRate;
-  float maxRoll;
-  float maxPitch;
+  double maxXVelocity;
+  double maxYVelocity;
+  double maxZVelocity;
+  double maxPitchRate;
+  double maxRollRate;
+  double maxYawRate;
+  double maxRoll;
+  double maxPitch;
 };
 
 class Object
