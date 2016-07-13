@@ -3,6 +3,7 @@
 #include <std_msgs/Float32.h>
 #include <sensor_msgs/PointCloud.h>
 #include <tf/transform_broadcaster.h>
+#include "vicon_ros/NamedPoseArray.h"
 
 // PCL
 #include <pcl/point_cloud.h>
@@ -55,6 +56,7 @@ public:
     , m_pubLatency()
     , m_pubPointCloud()
 #endif
+    , m_pubPoses()
   {
     ros::NodeHandle nl("~");
     nl.getParam("hostName", m_hostName);
@@ -70,6 +72,7 @@ public:
     ros::NodeHandle n;
     m_subscribeMarkers = n.subscribe("/vicon/pointCloud", 1, &ObjectTracker::pointCloudCallback, this);
 #endif
+    m_pubPoses = nl.advertise<vicon_ros::NamedPoseArray>("poses", 1);
   }
 
   void run()
@@ -275,6 +278,12 @@ private:
   void runICP(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
   {
     static bool initialized = false;
+    static int seq = 0;
+
+    vicon_ros::NamedPoseArray msgPoses;
+    msgPoses.header.seq = seq++;
+    msgPoses.header.frame_id = "world";
+    msgPoses.header.stamp = ros::Time::now();
 
     pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
     // pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
@@ -355,9 +364,24 @@ private:
         q.setRPY(roll, pitch, yaw);
         transform.setRotation(q);
         m_br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", object.name));
+
+        msgPoses.poses.resize(msgPoses.poses.size() + 1);
+        msgPoses.poses.back().name = object.name;
+        geometry_msgs::Pose& pose = msgPoses.poses.back().pose;
+
+        pose.position.x = x;
+        pose.position.y = y;
+        pose.position.z = z;
+
+        pose.orientation.x = q.x();
+        pose.orientation.y = q.y();
+        pose.orientation.z = q.z();
+        pose.orientation.w = q.w();
       }
 
     }
+
+    m_pubPoses.publish(msgPoses);
 
     initialized = true;
   }
@@ -373,6 +397,7 @@ private:
   ros::Publisher m_pubLatency;
   ros::Publisher m_pubPointCloud;
 #endif
+  ros::Publisher m_pubPoses;
 };
 
 

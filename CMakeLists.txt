@@ -20,6 +20,7 @@ set(VICON_SDK_DIR externalDependencies/vicon_sdk/)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   tf
+  vicon_ros
 )
 
 ## System dependencies are found with CMake's conventions
