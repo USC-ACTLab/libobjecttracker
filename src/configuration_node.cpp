@@ -1,15 +1,18 @@
 #include "ros/ros.h"
 #include <sensor_msgs/PointCloud.h>
+#include <iostream>
 
 void pointCloudCallback(const sensor_msgs::PointCloud::ConstPtr pointCloud)
 {
-  ROS_INFO("Received Markers");
+  std::cout << "    numPoints: " << pointCloud->points.size() << std::endl;
+  std::cout << "    points:" << std::endl;
 
   for(size_t i = 0; i < pointCloud->points.size(); ++i) {
-    ROS_INFO("[%f,%f,%f]",
-      pointCloud->points[i].x / 1000.0,
-      pointCloud->points[i].y / 1000.0,
-      pointCloud->points[i].z / 1000.0);
+    std::cout << "      \"" << i << "\": ["
+              << pointCloud->points[i].x << ","
+              << pointCloud->points[i].y << ","
+              << pointCloud->points[i].z << "]"
+              << std::endl;
   }
 }
 

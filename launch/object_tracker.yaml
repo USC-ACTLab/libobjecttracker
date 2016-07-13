@@ -1,13 +1,22 @@
 hostName: vicon
-numMarkerConfigurations: 1
+numMarkerConfigurations: 2
 markerConfigurations:
   "0":
     numPoints: 4
     points:
-      "0": [0.009475,0.013660,0.023648]
-      "1": [-0.021702,0.027433,0.019438]
-      "2": [-0.020826,-0.019418,0.019506]
-      "3": [0.022304,-0.013999,0.017704]
+      "0": [0.0197167,0.0321453,0.0242048]
+      "1": [-0.00833262,0.0459116,0.0151743]
+      "2": [0.0334551,0.00255057,0.0155777]
+      "3": [-0.0162439,0.000990679,0.0166437]
+  "1":
+    numPoints: 6
+    points:
+      "0": [0.017014,0.0326616,0.0235293]
+      "1": [-0.0149532,0.0510362,0.0148502]
+      "2": [0.048406,0.0642837,0.00920401]
+      "3": [0.0456916,-0.0138394,0.00784847]
+      "4": [-0.032415,-0.0110482,0.00835814]
+      "5": [-0.0297941,0.0676997,0.00765939]
 numDynamicsConfigurations: 1
 dynamicsConfigurations:
   "0":
@@ -19,17 +28,17 @@ dynamicsConfigurations:
     maxYawRate: 5.0
     maxRoll: 0.4
     maxPitch: 0.4
-numObjects: 1
+numObjects: 2
 objects:
   "0":
-    name: tracker_test1
+    name: cf1
     markerConfiguration: 0
     dynamicsConfiguration: 0
     initialPosition: [0, 0, 0]
     initialYaw: 0
   "1":
-    name: tracker_test2
-    markerConfiguration: 0
+    name: cf2
+    markerConfiguration: 1
     dynamicsConfiguration: 0
-    initialPosition: [0, 0.75, 0]
+    initialPosition: [0, 1.0, 0]
     initialYaw: 0
