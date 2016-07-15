@@ -197,12 +197,17 @@ private:
       sstr << "markerConfigurations/" << i << "/numPoints";
       int numPoints;
       nl.getParam(sstr.str(), numPoints);
+
+      std::vector<double> offset;
+      std::stringstream sstr2;
+      sstr2 << "markerConfigurations/" << i << "/offset";
+      nl.getParam(sstr2.str(), offset);
       for (int j = 0; j < numPoints; ++j) {
-        std::stringstream sstr2;
-        sstr2 << "markerConfigurations/" << i << "/points/" << j;
+        std::stringstream sstr3;
+        sstr3 << "markerConfigurations/" << i << "/points/" << j;
         std::vector<double> points;
-        nl.getParam(sstr2.str(), points);
-        m_markerConfigurations.back()->push_back(pcl::PointXYZ(points[0], points[1], points[2]));
+        nl.getParam(sstr3.str(), points);
+        m_markerConfigurations.back()->push_back(pcl::PointXYZ(points[0] + offset[0], points[1] + offset[1], points[2] + offset[2]));
       }
     }
   }
@@ -272,10 +277,25 @@ private:
         pointCloud->points[i].z
         ));
     }
-    runICP(markers);
+    // if (pointCloud->points.size() != 6) {
+    //   ROS_INFO("NumPoints: %lu", pointCloud->points.size());
+    // }
+
+    // struct timeval start, end;
+    // gettimeofday(&start, NULL);
+
+    // long totalTime = (time.tv_sec * 1000) + (time.tv_usec / 1000);
+
+    runICP(markers, pointCloud->header.stamp);
+
+    // gettimeofday(&end, NULL);
+    // double dt = (end.tv_sec + end.tv_usec / 1e6) - (start.tv_sec + start.tv_usec / 1e6);
+    // ROS_INFO("Latency: %f s", dt);
   }
 
-  void runICP(const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
+  void runICP(
+    const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers,
+    ros::Time stamp)
   {
     static bool initialized = false;
     static int seq = 0;
@@ -283,7 +303,7 @@ private:
     vicon_ros::NamedPoseArray msgPoses;
     msgPoses.header.seq = seq++;
     msgPoses.header.frame_id = "world";
-    msgPoses.header.stamp = ros::Time::now();
+    msgPoses.header.stamp = stamp;//ros::Time::now();
 
     pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
     // pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
@@ -304,8 +324,7 @@ private:
     for (size_t i = 0; i < m_objects.size(); ++i) {
       Object& object = m_objects[i];
 
-      float dt = (ros::Time::now() - object.lastValidTransform).toSec();
-
+      float dt = (stamp - object.lastValidTransform).toSec();
       // Set the max correspondence distance
       // TODO: take max here?
       const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.dynamicsConfigurationIdx];
@@ -320,6 +339,8 @@ private:
       pcl::PointCloud<pcl::PointXYZ> result;
       icp.align(result, object.lastTransformation.matrix());
       if (!icp.hasConverged()) {
+        ros::Time t = ros::Time::now();
+        ROS_INFO("ICP did not converge %d.%d", t.sec, t.nsec);
         continue;
       }
 
@@ -354,7 +375,7 @@ private:
       {
 
         object.lastTransformation = tROTA;
-        object.lastValidTransform = ros::Time::now();
+        object.lastValidTransform = stamp;
 
         // ROS_INFO("Pos: [%f, %f, %f, %f, %f, %f]", x, y, z, roll, pitch, yaw);
 
@@ -377,6 +398,36 @@ private:
         pose.orientation.y = q.y();
         pose.orientation.z = q.z();
         pose.orientation.w = q.w();
+      } else {
+        ros::Time t = ros::Time::now();
+        std::stringstream sstr;
+        sstr << "Dynamic check failed at " << t.sec << "." << t.nsec << std::endl;
+        if (fabs(vx) >= dynConf.maxXVelocity) {
+          sstr << "vx: " << vx << " >= " << dynConf.maxXVelocity << std::endl;
+        }
+        if (fabs(vy) >= dynConf.maxYVelocity) {
+          sstr << "vy: " << vy << " >= " << dynConf.maxYVelocity << std::endl;
+        }
+        if (fabs(vz) >= dynConf.maxZVelocity) {
+          sstr << "vz: " << vz << " >= " << dynConf.maxZVelocity << std::endl;
+        }
+        if (fabs(wroll) >= dynConf.maxRollRate) {
+          sstr << "wroll: " << wroll << " >= " << dynConf.maxRollRate << std::endl;
+        }
+        if (fabs(wpitch) >= dynConf.maxPitchRate) {
+          sstr << "wpitch: " << wpitch << " >= " << dynConf.maxPitchRate << std::endl;
+        }
+        if (fabs(wyaw) >= dynConf.maxYawRate) {
+          sstr << "wyaw: " << wyaw << " >= " << dynConf.maxYawRate << std::endl;
+        }
+        if (fabs(roll) >= dynConf.maxRoll) {
+          sstr << "roll: " << roll << " >= " << dynConf.maxRoll << std::endl;
+        }
+        if (fabs(pitch) >= dynConf.maxPitch) {
+          sstr << "pitch: " << pitch << " >= " << dynConf.maxPitch << std::endl;
+        }
+
+        ROS_INFO("%s", sstr.str().c_str());
       }
 
     }
