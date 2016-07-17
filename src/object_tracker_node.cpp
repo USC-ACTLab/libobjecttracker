@@ -57,6 +57,8 @@ public:
     , m_pubPointCloud()
 #endif
     , m_pubPoses()
+    , m_seq(0)
+    , m_initialized(false)
   {
     ros::NodeHandle nl("~");
     nl.getParam("hostName", m_hostName);
@@ -78,6 +80,14 @@ public:
   void run()
   {
 #ifdef USE_VICON_DIRECTLY
+    runViconDirect();
+#else
+    ros::spin();
+#endif
+  }
+
+  void runViconDirect()
+  {
     using namespace ViconDataStreamSDK::CPP;
 
     // Make a new client
@@ -180,9 +190,6 @@ public:
 
       ros::spinOnce();
     }
-#else
-    ros::spin();
-#endif
   }
 
 private:
@@ -293,19 +300,81 @@ private:
     // ROS_INFO("Latency: %f s", dt);
   }
 
+  typedef pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> ICP;
+
+  void initialize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
+  {
+    ICP icp;
+    icp.setMaximumIterations(5);
+    icp.setInputTarget(markers);
+
+    // prepare for knn query
+    std::vector<int> nearestIdx;
+    std::vector<float> nearestSqrDist;
+    ICP::KdTreePtr kdtree = icp.getSearchMethodTarget();
+
+    // for (Object &object: m_objects)
+    for (size_t i = 0; i < m_objects.size(); ++i) {
+      Object& object = m_objects[i];
+      pcl::PointCloud<pcl::PointXYZ>::Ptr &objMarkers =
+        m_markerConfigurations[object.markerConfigurationIdx];
+      icp.setInputSource(objMarkers);
+
+      // find the points nearest to the object's nominal position
+      size_t const objNpts = objMarkers->size();
+      nearestIdx.resize(objNpts);
+      nearestSqrDist.resize(objNpts);
+      // initial pos was loaded into lastTransformation from config file
+      Eigen::Vector3f objCenter = object.lastTransformation.translation();
+      pcl::PointXYZ ctr(objCenter.x(), objCenter.y(), objCenter.z());
+      kdtree->nearestKSearch(ctr, objNpts, nearestIdx, nearestSqrDist);
+
+      // compute centroid of nearest points
+      pcl::PointXYZ center(0, 0, 0);
+      for (int i = 0; i < objNpts; ++i) {
+        // really, no operators overloads???? something must be missing
+        center.x += (*markers)[nearestIdx[i]].x;
+        center.y += (*markers)[nearestIdx[i]].y;
+        center.z += (*markers)[nearestIdx[i]].z;
+      }
+      center.x /= objNpts;
+      center.y /= objNpts;
+      center.z /= objNpts;
+
+      // try ICP with guesses of many different yaws about knn centroid
+      pcl::PointCloud<pcl::PointXYZ> result;
+      static int const N_YAW = 20;
+      double bestErr = DBL_MAX;
+      for (int i = 0; i < N_YAW; ++i) {
+        float yaw = i * (2 * M_PI / N_YAW);
+        Eigen::Matrix4f tryMatrix = pcl::getTransformation(
+          center.x, center.y, center.z, yaw, 0, 0).matrix();
+        icp.align(result, tryMatrix);
+        double err = icp.getFitnessScore();
+        if (err < bestErr) {
+          bestErr = err;
+          object.lastTransformation = icp.getFinalTransformation();
+        }
+      }
+    }
+  }
+
   void runICP(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers,
     ros::Time stamp)
   {
-    static bool initialized = false;
-    static int seq = 0;
+    if (!m_initialized) {
+      initialize();
+      m_initialized = true;
+      // we will immediately do a useless ICP step, but who cares
+    }
 
     vicon_ros::NamedPoseArray msgPoses;
     msgPoses.header.seq = seq++;
     msgPoses.header.frame_id = "world";
     msgPoses.header.stamp = stamp;//ros::Time::now();
 
-    pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+    ICP icp;
     // pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
     // pcl::registration::TransformationEstimation3DYaw<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation3DYaw<pcl::PointXYZ, pcl::PointXYZ>);
     // icp.setTransformationEstimation(trans);
@@ -429,12 +498,9 @@ private:
 
         ROS_INFO("%s", sstr.str().c_str());
       }
-
     }
 
     m_pubPoses.publish(msgPoses);
-
-    initialized = true;
   }
 
 private:
@@ -449,6 +515,8 @@ private:
   ros::Publisher m_pubPointCloud;
 #endif
   ros::Publisher m_pubPoses;
+  int m_seq;
+  bool m_initialized;
 };
 
 
