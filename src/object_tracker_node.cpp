@@ -313,7 +313,8 @@ private:
     // prepare for knn query
     std::vector<int> nearestIdx;
     std::vector<float> nearestSqrDist;
-    ICP::KdTreePtr kdtree = icp.getSearchMethodTarget();
+    pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+    kdtree.setInputCloud(markers);
 
     bool allFitsGood = true;
     // for (Object &object: m_objects)
@@ -330,7 +331,7 @@ private:
       // initial pos was loaded into lastTransformation from config file
       Eigen::Vector3f objCenter = object.lastTransformation.translation();
       pcl::PointXYZ ctr(objCenter.x(), objCenter.y(), objCenter.z());
-      kdtree->nearestKSearch(ctr, objNpts, nearestIdx, nearestSqrDist);
+      kdtree.nearestKSearch(ctr, objNpts, nearestIdx, nearestSqrDist);
 
       // compute centroid of nearest points
       pcl::PointXYZ center(0, 0, 0);
@@ -367,7 +368,7 @@ private:
       nearestIdx.resize(1);
       nearestSqrDist.resize(1);
       for (size_t i = 0; i < objNpts; ++i) {
-        kdtree->nearestKSearch(bestCloud[i], 1, nearestIdx, nearestSqrDist);
+        kdtree.nearestKSearch(bestCloud[i], 1, nearestIdx, nearestSqrDist);
         if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
           allFitsGood = false;
         }
