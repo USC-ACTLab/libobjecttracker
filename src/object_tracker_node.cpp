@@ -304,7 +304,7 @@ private:
 
   typedef pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> ICP;
 
-  void initialize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
+  bool initialize(pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
   {
     ICP icp;
     icp.setMaximumIterations(5);
@@ -315,6 +315,7 @@ private:
     std::vector<float> nearestSqrDist;
     ICP::KdTreePtr kdtree = icp.getSearchMethodTarget();
 
+    bool allFitsGood = true;
     // for (Object &object: m_objects)
     for (size_t i = 0; i < m_objects.size(); ++i) {
       Object& object = m_objects[i];
@@ -358,17 +359,33 @@ private:
           object.lastTransformation = icp.getFinalTransformation();
         }
       }
+
+      // check that the best fit was actually good
+      static double const INIT_MAX_HAUSDORFF_DIST2 = 0.008 * 0.008; // 8mm
+      ICP::PointCloudSource bestCloud;
+      transformPointCloud(*objMarkers, bestCloud, object.lastTransformation);
+      nearestIdx.resize(1);
+      nearestSqrDist.resize(1);
+      for (size_t i = 0; i < objNpts; ++i) {
+        kdtree->nearestKSearch(bestCloud[i], 1, nearestIdx, nearestSqrDist);
+        if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
+          allFitsGood = false;
+        }
+      }
     }
+
+    return allFitsGood;
   }
 
   void runICP(
     const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers,
     ros::Time stamp)
   {
+    m_initialized = m_initialized || initialize(markers);
     if (!m_initialized) {
-      initialize(markers);
-      m_initialized = true;
-      // we will immediately do a useless ICP step, but who cares
+      ROS_WARN("Object tracker initialization failed - "
+        "check that position is correct, all markers are visible, "
+        "and marker configuration matches config file");
     }
 
     vicon_ros::NamedPoseArray msgPoses;
