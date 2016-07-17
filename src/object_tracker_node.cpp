@@ -16,7 +16,7 @@
 
 #ifdef USE_VICON_DIRECTLY
 // VICON
-#include "Client.h"
+#include "vicon_sdk/Client.h"
 #endif
 
 #define ENABLE_GROUND_TRUTH
@@ -86,6 +86,7 @@ public:
 #endif
   }
 
+#ifdef USE_VICON_DIRECTLY
   void runViconDirect()
   {
     using namespace ViconDataStreamSDK::CPP;
@@ -191,6 +192,7 @@ public:
       ros::spinOnce();
     }
   }
+#endif
 
 private:
   void readMarkerConfigurations()
@@ -364,13 +366,13 @@ private:
     ros::Time stamp)
   {
     if (!m_initialized) {
-      initialize();
+      initialize(markers);
       m_initialized = true;
       // we will immediately do a useless ICP step, but who cares
     }
 
     vicon_ros::NamedPoseArray msgPoses;
-    msgPoses.header.seq = seq++;
+    msgPoses.header.seq = m_seq++;
     msgPoses.header.frame_id = "world";
     msgPoses.header.stamp = stamp;//ros::Time::now();
 
