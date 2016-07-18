@@ -11,6 +11,7 @@
 #include <pcl/common/transforms.h>
 #include <pcl/registration/icp.h>
 #include <pcl/registration/transformation_estimation_2D.h>
+// #include <pcl/registration/transformation_estimation_lm.h>
 #include <pcl_ros/point_cloud.h>
 #include "transformation_estimation_3DYaw.h"
 
@@ -243,33 +244,68 @@ private:
 
   void readObjects()
   {
-    ros::NodeHandle nl("~");
-    int numObjects;
-    nl.getParam("numObjects", numObjects);
-    m_objects.resize(numObjects);
-    for (int i = 0; i < numObjects; ++i) {
-      std::stringstream sstr;
-      sstr << "objects/" << i << "/";
+    // ros::NodeHandle nl("~");
+    // int numObjects;
+    // nl.getParam("numObjects", numObjects);
+    // m_objects.resize(numObjects);
+    // for (int i = 0; i < numObjects; ++i) {
+    //   std::stringstream sstr;
+    //   sstr << "objects/" << i << "/";
 
-      std::string name;
-      int markerConfiguration;
-      int dynamicsConfiguration;
-      std::vector<double> initialPosition;
-      double initialYaw;
-      nl.getParam(sstr.str() + "name", name);
-      nl.getParam(sstr.str() + "markerConfiguration", markerConfiguration);
-      nl.getParam(sstr.str() + "dynamicsConfiguration", dynamicsConfiguration);
-      nl.getParam(sstr.str() + "initialPosition", initialPosition);
-      nl.getParam(sstr.str() + "initialYaw", initialYaw);
+    //   std::string name;
+    //   int markerConfiguration;
+    //   int dynamicsConfiguration;
+    //   std::vector<double> initialPosition;
+    //   double initialYaw;
+    //   nl.getParam(sstr.str() + "name", name);
+    //   nl.getParam(sstr.str() + "markerConfiguration", markerConfiguration);
+    //   nl.getParam(sstr.str() + "dynamicsConfiguration", dynamicsConfiguration);
+    //   nl.getParam(sstr.str() + "initialPosition", initialPosition);
+    //   nl.getParam(sstr.str() + "initialYaw", initialYaw);
 
-      m_objects[i].name = name;
-      m_objects[i].markerConfigurationIdx = markerConfiguration;
-      m_objects[i].dynamicsConfigurationIdx = dynamicsConfiguration;
+    //   m_objects[i].name = name;
+    //   m_objects[i].markerConfigurationIdx = markerConfiguration;
+    //   m_objects[i].dynamicsConfigurationIdx = dynamicsConfiguration;
+    //   m_objects[i].lastTransformation = pcl::getTransformation(
+    //     initialPosition[0],
+    //     initialPosition[1],
+    //     initialPosition[2],
+    //     initialYaw, 0, 0);
+    //   m_objects[i].lastValidTransform = ros::Time::now();
+    // }
+
+    // read CF config
+    ros::NodeHandle nGlobal;
+
+    XmlRpc::XmlRpcValue crazyflies;
+    nGlobal.getParam("crazyflies", crazyflies);
+    ROS_ASSERT(crazyflies.getType() == XmlRpc::XmlRpcValue::TypeArray);
+
+    m_objects.resize(crazyflies.size());
+    for (int32_t i = 0; i < crazyflies.size(); ++i)
+    {
+      ROS_ASSERT(crazyflies[i].getType() == XmlRpc::XmlRpcValue::TypeStruct);
+      XmlRpc::XmlRpcValue crazyflie = crazyflies[i];
+      std::string id = crazyflie["id"];
+      XmlRpc::XmlRpcValue pos = crazyflie["initialPosition"];
+      ROS_ASSERT(pos.getType() == XmlRpc::XmlRpcValue::TypeArray);
+
+      m_objects[i].name = "cf" + id + "/cf" + id;
+      m_objects[i].markerConfigurationIdx = 0;
+      m_objects[i].dynamicsConfigurationIdx = 0;
+
+      std::vector<double> posVec(3);
+      for (int32_t j = 0; j < pos.size(); ++j)
+      {
+        ROS_ASSERT(pos[j].getType() == XmlRpc::XmlRpcValue::TypeDouble);
+        double f = static_cast<double>(pos[j]);
+        posVec[j] = f;
+      }
       m_objects[i].lastTransformation = pcl::getTransformation(
-        initialPosition[0],
-        initialPosition[1],
-        initialPosition[2],
-        initialYaw, 0, 0);
+        posVec[0],
+        posVec[1],
+        posVec[2],
+        0, 0, 0);
       m_objects[i].lastValidTransform = ros::Time::now();
     }
   }
@@ -293,9 +329,13 @@ private:
     // struct timeval start, end;
     // gettimeofday(&start, NULL);
 
-    // long totalTime = (time.tv_sec * 1000) + (time.tv_usec / 1000);
+    // static int counter = 0;
 
-    runICP(markers, pointCloud->header.stamp);
+    // if (counter % 5 == 0) {
+      runICP(markers, pointCloud->header.stamp);
+    // }
+
+    // ++counter;
 
     // gettimeofday(&end, NULL);
     // double dt = (end.tv_sec + end.tv_usec / 1e6) - (start.tv_sec + start.tv_usec / 1e6);
@@ -395,6 +435,7 @@ private:
     msgPoses.header.stamp = stamp;//ros::Time::now();
 
     ICP icp;
+    // pcl::registration::TransformationEstimationLM<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimationLM<pcl::PointXYZ, pcl::PointXYZ>);
     // pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
     // pcl::registration::TransformationEstimation3DYaw<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation3DYaw<pcl::PointXYZ, pcl::PointXYZ>);
     // icp.setTransformationEstimation(trans);

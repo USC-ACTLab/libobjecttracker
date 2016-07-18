@@ -134,6 +134,7 @@ include_directories(
 
 link_directories(
   ${VICON_SDK_DIR}/lib64
+  /home/whoenig/sw/gperftools-2.4/.libs
 )
 
 ## Declare a C++ library
@@ -153,11 +154,14 @@ add_executable(object_tracker_node src/object_tracker_node.cpp)
 ## same as for the library above
 # add_dependencies(object_tracker_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
+set( CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-as-needed")
+
 ## Specify libraries to link a library or executable target against
 target_link_libraries(object_tracker_node
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
   ViconDataStreamSDK_CPP
+  profiler
 )
 
 add_executable(

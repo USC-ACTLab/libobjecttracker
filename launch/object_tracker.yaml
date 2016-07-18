@@ -34,19 +34,19 @@ dynamicsConfigurations:
 numObjects: 3
 objects:
   "0":
-    name: cf1
+    name: cf1/cf1
     markerConfiguration: 0
     dynamicsConfiguration: 0
-    initialPosition: [0, 0, 0]
+    initialPosition: [0.0, 1.0, 0]
     initialYaw: 0
   "1":
-    name: cf2
+    name: cf2/cf2
     markerConfiguration: 0
     dynamicsConfiguration: 0
-    initialPosition: [0, 1.0, 0]
+    initialPosition: [0, 0.0, 0]
     initialYaw: 0
   "2":
-    name: cf3
+    name: cf3/cf3
     markerConfiguration: 0
     dynamicsConfiguration: 0
     initialPosition: [0, -1.0, 0]
