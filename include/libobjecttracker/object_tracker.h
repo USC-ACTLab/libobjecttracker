@@ -38,6 +38,7 @@ namespace libobjecttracker {
     size_t m_dynamicsConfigurationIdx;
     Eigen::Affine3f m_lastTransformation;
     std::chrono::time_point<std::chrono::high_resolution_clock> m_lastValidTransform;
+    bool m_lastTransformationValid;
 
     friend ObjectTracker;
   };
@@ -54,6 +55,8 @@ namespace libobjecttracker {
 
     void update(
       pcl::PointCloud<pcl::PointXYZ>::Ptr pointCloud);
+
+    const std::vector<Object>& objects() const;
 
   private:
     void runICP(

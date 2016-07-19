@@ -24,6 +24,8 @@ Object::Object(
   : m_markerConfigurationIdx(markerConfigurationIdx)
   , m_dynamicsConfigurationIdx(dynamicsConfigurationIdx)
   , m_lastTransformation(initialTransformation)
+  , m_lastValidTransform()
+  , m_lastTransformationValid(false)
 {
 }
 
@@ -34,7 +36,7 @@ const Eigen::Affine3f& Object::transformation() const
 
 bool Object::lastTransformationValid() const
 {
-  // TODO!
+  return m_lastTransformationValid;
 }
 
 /////////////////////////////////////////////////////////////
@@ -46,6 +48,7 @@ ObjectTracker::ObjectTracker(
   : m_dynamicsConfigurations(dynamicsConfigurations)
   , m_markerConfigurations(markerConfigurations)
   , m_objects(objects)
+  , m_initialized(false)
 {
 
 }
@@ -54,6 +57,11 @@ void ObjectTracker::update(
   pcl::PointCloud<pcl::PointXYZ>::Ptr pointCloud)
 {
   runICP(pointCloud);
+}
+
+const std::vector<Object>& ObjectTracker::objects() const
+{
+  return m_objects;
 }
 
 bool ObjectTracker::initialize(
@@ -161,6 +169,7 @@ void ObjectTracker::runICP(
   // for (auto& object : m_objects) {
   for (size_t i = 0; i < m_objects.size(); ++i) {
     Object& object = m_objects[i];
+    object.m_lastTransformationValid = false;
 
     std::chrono::duration<double> elapsedSeconds = stamp-object.m_lastValidTransform;
     double dt = elapsedSeconds.count();
@@ -217,6 +226,7 @@ void ObjectTracker::runICP(
 
       object.m_lastTransformation = tROTA;
       object.m_lastValidTransform = stamp;
+      object.m_lastTransformationValid = true;
     } else {
       std::stringstream sstr;
       sstr << "Dynamic check failed" << std::endl;
