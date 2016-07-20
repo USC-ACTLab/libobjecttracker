@@ -18,6 +18,7 @@ namespace libobjecttracker {
     double maxYawRate;
     double maxRoll;
     double maxPitch;
+    double maxFitnessScore;
   };
 
   class ObjectTracker;
@@ -58,6 +59,9 @@ namespace libobjecttracker {
 
     const std::vector<Object>& objects() const;
 
+    void setLogWarningCallback(
+      std::function<void(const std::string&)> logWarn);
+
   private:
     void runICP(
       const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
@@ -65,11 +69,15 @@ namespace libobjecttracker {
     bool initialize(
       pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
 
+    void logWarn(const std::string& msg);
+
   private:
     std::vector<MarkerConfiguration> m_markerConfigurations;
     std::vector<DynamicsConfiguration> m_dynamicsConfigurations;
     std::vector<Object> m_objects;
     bool m_initialized;
+
+    std::function<void(const std::string&)> m_logWarn;
   };
 
 } // namespace libobjecttracker

@@ -8,9 +8,6 @@
 #include <pcl/registration/transformation_estimation_2D.h>
 // #include <pcl/registration/transformation_estimation_lm.h>
 
-#include <iostream>
-
-
 typedef pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> ICP;
 
 namespace libobjecttracker {
@@ -49,6 +46,7 @@ ObjectTracker::ObjectTracker(
   , m_markerConfigurations(markerConfigurations)
   , m_objects(objects)
   , m_initialized(false)
+  , m_logWarn()
 {
 
 }
@@ -62,6 +60,12 @@ void ObjectTracker::update(
 const std::vector<Object>& ObjectTracker::objects() const
 {
   return m_objects;
+}
+
+void ObjectTracker::setLogWarningCallback(
+  std::function<void(const std::string&)> logWarn)
+{
+  m_logWarn = logWarn;
 }
 
 bool ObjectTracker::initialize(
@@ -145,9 +149,10 @@ void ObjectTracker::runICP(
   auto stamp = std::chrono::high_resolution_clock::now();
   m_initialized = m_initialized || initialize(markers);
   if (!m_initialized) {
-    std::cout << "Object tracker initialization failed - "
+    logWarn(
+      "Object tracker initialization failed - "
       "check that position is correct, all markers are visible, "
-      "and marker configuration matches config file" << std::endl;
+      "and marker configuration matches config file");
   }
 
   ICP icp;
@@ -190,7 +195,7 @@ void ObjectTracker::runICP(
     if (!icp.hasConverged()) {
       // ros::Time t = ros::Time::now();
       // ROS_INFO("ICP did not converge %d.%d", t.sec, t.nsec);
-      std::cout << "ICP did not converge!" << std::endl;
+      logWarn("ICP did not converge!");
       continue;
     }
 
@@ -221,7 +226,8 @@ void ObjectTracker::runICP(
         && fabs(wpitch) < dynConf.maxPitchRate
         && fabs(wyaw) < dynConf.maxYawRate
         && fabs(roll) < dynConf.maxRoll
-        && fabs(pitch) < dynConf.maxPitch)
+        && fabs(pitch) < dynConf.maxPitch
+        && icp.getFitnessScore() < dynConf.maxFitnessScore)
     {
 
       object.m_lastTransformation = tROTA;
@@ -254,12 +260,20 @@ void ObjectTracker::runICP(
       if (fabs(pitch) >= dynConf.maxPitch) {
         sstr << "pitch: " << pitch << " >= " << dynConf.maxPitch << std::endl;
       }
-
-      // ROS_INFO("%s", sstr.str().c_str());
-      std::cout << sstr.str() << std::endl;
+      if (icp.getFitnessScore() < dynConf.maxFitnessScore) {
+        sstr << "fitness: " << icp.getFitnessScore() << " >= " << dynConf.maxFitnessScore << std::endl;
+      }
+      logWarn(sstr.str());
     }
   }
 
+}
+
+void ObjectTracker::logWarn(const std::string& msg)
+{
+  if (m_logWarn) {
+    m_logWarn(msg);
+  }
 }
 
 } // namespace libobjecttracker
