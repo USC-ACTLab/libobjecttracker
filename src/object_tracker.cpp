@@ -42,8 +42,8 @@ ObjectTracker::ObjectTracker(
   const std::vector<DynamicsConfiguration>& dynamicsConfigurations,
   const std::vector<MarkerConfiguration>& markerConfigurations,
   const std::vector<Object>& objects)
-  : m_dynamicsConfigurations(dynamicsConfigurations)
-  , m_markerConfigurations(markerConfigurations)
+  : m_markerConfigurations(markerConfigurations)
+  , m_dynamicsConfigurations(dynamicsConfigurations)
   , m_objects(objects)
   , m_initialized(false)
   , m_logWarn()
@@ -114,28 +114,33 @@ bool ObjectTracker::initialize(
     pcl::PointCloud<pcl::PointXYZ> result;
     static int const N_YAW = 20;
     double bestErr = DBL_MAX;
+    Eigen::Affine3f bestTransformation;
     for (int i = 0; i < N_YAW; ++i) {
       float yaw = i * (2 * M_PI / N_YAW);
       Eigen::Matrix4f tryMatrix = pcl::getTransformation(
-        center.x, center.y, center.z, yaw, 0, 0).matrix();
+        center.x, center.y, center.z, 0, 0, yaw).matrix();
       icp.align(result, tryMatrix);
       double err = icp.getFitnessScore();
       if (err < bestErr) {
         bestErr = err;
-        object.m_lastTransformation = icp.getFinalTransformation();
+        bestTransformation = icp.getFinalTransformation();
       }
     }
 
     // check that the best fit was actually good
     static double const INIT_MAX_HAUSDORFF_DIST2 = 0.008 * 0.008; // 8mm
-    ICP::PointCloudSource bestCloud;
-    transformPointCloud(*objMarkers, bestCloud, object.m_lastTransformation);
     nearestIdx.resize(1);
     nearestSqrDist.resize(1);
     for (size_t i = 0; i < objNpts; ++i) {
-      kdtree.nearestKSearch(bestCloud[i], 1, nearestIdx, nearestSqrDist);
+      pcl::PointXYZ p = (*objMarkers)[i];
+      Eigen::Vector3f p2 = bestTransformation * Eigen::Vector3f(p.x, p.y, p.z);
+      pcl::PointXYZ p3 = pcl::PointXYZ(p2.x(), p2.y(), p2.z());
+      kdtree.nearestKSearch(p3, 1, nearestIdx, nearestSqrDist);
       if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
         allFitsGood = false;
+      }
+      else {
+        object.m_lastTransformation = bestTransformation;
       }
     }
   }
@@ -277,3 +282,12 @@ void ObjectTracker::logWarn(const std::string& msg)
 }
 
 } // namespace libobjecttracker
+
+#ifdef STANDALONE
+#include "stdio.h"
+int main()
+{
+  libobjecttracker::ObjectTracker ot({}, {}, {});
+  puts("test OK");
+}
+#endif // STANDALONE
