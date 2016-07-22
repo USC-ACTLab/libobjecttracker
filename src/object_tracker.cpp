@@ -8,6 +8,9 @@
 #include <pcl/registration/transformation_estimation_2D.h>
 // #include <pcl/registration/transformation_estimation_lm.h>
 
+// TEMP for debug
+#include <cstdio>
+
 typedef pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> ICP;
 
 namespace libobjecttracker {
@@ -68,9 +71,21 @@ void ObjectTracker::setLogWarningCallback(
   m_logWarn = logWarn;
 }
 
+static Eigen::Vector3f pcl2eig(pcl::PointXYZ p)
+{
+  return Eigen::Vector3f(p.x, p.y, p.z);
+}
+
+static pcl::PointXYZ eig2pcl(Eigen::Vector3f v)
+{
+  return pcl::PointXYZ(v.x(), v.y(), v.z());
+}
+
 bool ObjectTracker::initialize(
   pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
 {
+  size_t const nObjs = m_objects.size();
+
   ICP icp;
   icp.setMaximumIterations(5);
   icp.setInputTarget(markers);
@@ -80,6 +95,23 @@ bool ObjectTracker::initialize(
   std::vector<float> nearestSqrDist;
   pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
   kdtree.setInputCloud(markers);
+
+  auto center = [this](size_t i) 
+    { return m_objects[i].m_lastTransformation.translation(); };
+
+  // compute the distance between the closest 2 objects in the nominal configuration
+  // we will use this value to limit allowed deviation from nominal positions
+  float closest = FLT_MAX;
+  for (int i = 0; i < nObjs; ++i) {
+    for (int j = i + 1; j < nObjs; ++j) {
+      float dist = (center(i) - center(j)).norm();
+      closest = std::min(closest, dist);
+    }
+  }
+  float const max_deviation = closest / 3;
+
+  printf("Object tracker: limiting distance from nominal position "
+    "to %f meters\n", max_deviation);
 
   bool allFitsGood = true;
   // for (Object &object: m_objects)
@@ -94,21 +126,20 @@ bool ObjectTracker::initialize(
     nearestIdx.resize(objNpts);
     nearestSqrDist.resize(objNpts);
     // initial pos was loaded into lastTransformation from config file
-    Eigen::Vector3f objCenter = object.m_lastTransformation.translation();
-    pcl::PointXYZ ctr(objCenter.x(), objCenter.y(), objCenter.z());
-    kdtree.nearestKSearch(ctr, objNpts, nearestIdx, nearestSqrDist);
+    auto nominalCenter = eig2pcl(center(i));
+    kdtree.nearestKSearch(nominalCenter, objNpts, nearestIdx, nearestSqrDist);
 
     // compute centroid of nearest points
-    pcl::PointXYZ center(0, 0, 0);
+    Eigen::Vector3f actualCenter(0, 0, 0);
     for (int i = 0; i < objNpts; ++i) {
-      // really, no operators overloads???? something must be missing
-      center.x += (*markers)[nearestIdx[i]].x;
-      center.y += (*markers)[nearestIdx[i]].y;
-      center.z += (*markers)[nearestIdx[i]].z;
+      actualCenter += pcl2eig((*markers)[nearestIdx[i]]);
     }
-    center.x /= objNpts;
-    center.y /= objNpts;
-    center.z /= objNpts;
+    actualCenter /= objNpts;
+
+    if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
+      allFitsGood = false;
+      continue;
+    }
 
     // try ICP with guesses of many different yaws about knn centroid
     pcl::PointCloud<pcl::PointXYZ> result;
@@ -118,7 +149,8 @@ bool ObjectTracker::initialize(
     for (int i = 0; i < N_YAW; ++i) {
       float yaw = i * (2 * M_PI / N_YAW);
       Eigen::Matrix4f tryMatrix = pcl::getTransformation(
-        center.x, center.y, center.z, 0, 0, yaw).matrix();
+        actualCenter.x(), actualCenter.y(), actualCenter.z(), 
+        0, 0, yaw).matrix();
       icp.align(result, tryMatrix);
       double err = icp.getFitnessScore();
       if (err < bestErr) {
