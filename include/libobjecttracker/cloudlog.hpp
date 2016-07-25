@@ -73,6 +73,10 @@ namespace libobjecttracker {
 			}
 			while (s) {
 				uint32_t millis = read<uint32_t>(s);
+				// TODO cleaner loop?
+				if (!s) {
+					break;
+				}
 				timestamps.push_back(millis);
 
 				uint32_t size = read<uint32_t>(s);
