@@ -68,7 +68,13 @@ ObjectTracker::ObjectTracker(
 
 void ObjectTracker::update(Cloud::Ptr pointCloud)
 {
-  runICP(pointCloud);
+  update(std::chrono::high_resolution_clock::now(), pointCloud);
+}
+
+void ObjectTracker::update(std::chrono::high_resolution_clock::time_point time, 
+  Cloud::Ptr pointCloud)
+{
+  runICP(time, pointCloud);
 }
 
 const std::vector<Object>& ObjectTracker::objects() const
@@ -194,9 +200,9 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
   return allFitsGood;
 }
 
-void ObjectTracker::runICP(Cloud::ConstPtr markers)
+void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
+  Cloud::ConstPtr markers)
 {
-  auto stamp = std::chrono::high_resolution_clock::now();
   m_initialized = m_initialized || initialize(markers);
   if (!m_initialized) {
     logWarn(
@@ -330,9 +336,13 @@ void ObjectTracker::logWarn(const std::string& msg)
 
 #ifdef STANDALONE
 #include "stdio.h"
+#include "cloudlog.hpp"
 int main()
 {
   libobjecttracker::ObjectTracker ot({}, {}, {});
+  PointCloudLogger logger;
+  PointCloudPlayer player;
+  player.play(ot);
   puts("test OK");
 }
 #endif // STANDALONE

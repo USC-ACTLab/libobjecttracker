@@ -59,13 +59,17 @@ namespace libobjecttracker {
     void update(
       pcl::PointCloud<pcl::PointXYZ>::Ptr pointCloud);
 
+    // for faster-than-real-time file playback
+    void update(std::chrono::high_resolution_clock::time_point stamp,
+      pcl::PointCloud<pcl::PointXYZ>::Ptr pointCloud);
+
     const std::vector<Object>& objects() const;
 
     void setLogWarningCallback(
       std::function<void(const std::string&)> logWarn);
 
   private:
-    void runICP(
+    void runICP(std::chrono::high_resolution_clock::time_point stamp,
       const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
 
     bool initialize(
