@@ -61,6 +61,7 @@ ObjectTracker::ObjectTracker(
   , m_dynamicsConfigurations(dynamicsConfigurations)
   , m_objects(objects)
   , m_initialized(false)
+  , m_init_attempts(0)
   , m_logWarn()
 {
 
@@ -123,8 +124,8 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     "to %f meters\n", max_deviation);
 
   bool allFitsGood = true;
-  for (Object &object: m_objects) {
-
+  for (int iObj = 0; iObj < nObjs; ++i) {
+    Object *object = m_objects[iObj];
     Cloud::Ptr &objMarkers =
       m_markerConfigurations[object.m_markerConfigurationIdx];
     icp.setInputSource(objMarkers);
@@ -145,6 +146,9 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     }
     actualCenter /= objNpts;
     if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
+      std::cout << "error: nearest neighbors of object " << iObj
+                << " are centered at " << actualCenter
+                << " instead of " << nominalCenter << "\n";
       allFitsGood = false;
       continue;
     }
@@ -179,6 +183,9 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
       correspondenceIndices[i] = nearestIdx[0];
       if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
         fitGood = false;
+        std::cout << "error: nearest neighbor of marker " << i
+                  << " in object " << iObj << " is " 
+                  << 1000 * sqrt(nearestSqrDist[0]) << "mm from nominal\n";
       }
     }
 
@@ -197,6 +204,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     allFitsGood = allFitsGood && fitGood;
   }
 
+  ++m_init_attempts;
   return allFitsGood;
 }
 

@@ -82,6 +82,7 @@ namespace libobjecttracker {
     std::vector<DynamicsConfiguration> m_dynamicsConfigurations;
     std::vector<Object> m_objects;
     bool m_initialized;
+    int m_init_attempts;
 
     std::function<void(const std::string&)> m_logWarn;
   };
