@@ -72,7 +72,7 @@ void ObjectTracker::update(Cloud::Ptr pointCloud)
   update(std::chrono::high_resolution_clock::now(), pointCloud);
 }
 
-void ObjectTracker::update(std::chrono::high_resolution_clock::time_point time, 
+void ObjectTracker::update(std::chrono::high_resolution_clock::time_point time,
   Cloud::Ptr pointCloud)
 {
   runICP(time, pointCloud);
@@ -124,8 +124,8 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     "to %f meters\n", max_deviation);
 
   bool allFitsGood = true;
-  for (int iObj = 0; iObj < nObjs; ++i) {
-    Object *object = m_objects[iObj];
+  for (int iObj = 0; iObj < nObjs; ++iObj) {
+    Object& object = m_objects[iObj];
     Cloud::Ptr &objMarkers =
       m_markerConfigurations[object.m_markerConfigurationIdx];
     icp.setInputSource(objMarkers);
@@ -161,7 +161,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     for (int i = 0; i < N_YAW; ++i) {
       float yaw = i * (2 * M_PI / N_YAW);
       Eigen::Matrix4f tryMatrix = pcl::getTransformation(
-        actualCenter.x(), actualCenter.y(), actualCenter.z(), 
+        actualCenter.x(), actualCenter.y(), actualCenter.z(),
         0, 0, yaw).matrix();
       icp.align(result, tryMatrix);
       double err = icp.getFitnessScore();
@@ -184,7 +184,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
       if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
         fitGood = false;
         std::cout << "error: nearest neighbor of marker " << i
-                  << " in object " << iObj << " is " 
+                  << " in object " << iObj << " is "
                   << 1000 * sqrt(nearestSqrDist[0]) << "mm from nominal\n";
       }
     }
@@ -196,7 +196,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
       object.m_lastTransformation = bestTransformation;
       // remove highest indices first
       std::sort(objTakePts.rbegin(), objTakePts.rend());
-      for (int idx : correspondenceIndices) {
+      for (int idx : objTakePts) {
         markers->erase(markers->begin() + idx);
       }
       // update search structures after deleting markers
@@ -326,7 +326,7 @@ void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
       if (fabs(pitch) >= dynConf.maxPitch) {
         sstr << "pitch: " << pitch << " >= " << dynConf.maxPitch << std::endl;
       }
-      if (icp.getFitnessScore() < dynConf.maxFitnessScore) {
+      if (icp.getFitnessScore() >= dynConf.maxFitnessScore) {
         sstr << "fitness: " << icp.getFitnessScore() << " >= " << dynConf.maxFitnessScore << std::endl;
       }
       logWarn(sstr.str());
