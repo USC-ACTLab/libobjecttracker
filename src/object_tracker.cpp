@@ -104,7 +104,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
   // prepare for knn query
   std::vector<int> nearestIdx;
   std::vector<float> nearestSqrDist;
-  std::vector<int> correspondenceIndices;
+  std::vector<int> objTakePts;
   pcl::KdTreeFLANN<Point> kdtree;
   kdtree.setInputCloud(markers);
 
@@ -175,12 +175,12 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     static double const INIT_MAX_HAUSDORFF_DIST2 = 0.005 * 0.005; // 5mm
     nearestIdx.resize(1);
     nearestSqrDist.resize(1);
-    correspondenceIndices.resize(objNpts);
+    objTakePts.resize(objNpts);
     bool fitGood = true;
     for (size_t i = 0; i < objNpts; ++i) {
       auto p = bestTransformation * pcl2eig((*objMarkers)[i]);
       kdtree.nearestKSearch(eig2pcl(p), 1, nearestIdx, nearestSqrDist);
-      correspondenceIndices[i] = nearestIdx[0];
+      objTakePts[i] = nearestIdx[0];
       if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
         fitGood = false;
         std::cout << "error: nearest neighbor of marker " << i
@@ -194,6 +194,8 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     // (TODO: this is so greedy... do we need a more global approach?)
     if (fitGood) {
       object.m_lastTransformation = bestTransformation;
+      // remove highest indices first
+      std::sort(objTakePts.rbegin(), objTakePts.rend());
       for (int idx : correspondenceIndices) {
         markers->erase(markers->begin() + idx);
       }
