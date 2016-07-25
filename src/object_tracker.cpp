@@ -11,7 +11,19 @@
 // TEMP for debug
 #include <cstdio>
 
-typedef pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> ICP;
+using Point = pcl::PointXYZ;
+using Cloud = pcl::PointCloud<Point>;
+using ICP = pcl::IterativeClosestPoint<Point, Point>;
+
+static Eigen::Vector3f pcl2eig(Point p)
+{
+  return Eigen::Vector3f(p.x, p.y, p.z);
+}
+
+static Point eig2pcl(Eigen::Vector3f v)
+{
+  return Point(v.x(), v.y(), v.z());
+}
 
 namespace libobjecttracker {
 
@@ -54,8 +66,7 @@ ObjectTracker::ObjectTracker(
 
 }
 
-void ObjectTracker::update(
-  pcl::PointCloud<pcl::PointXYZ>::Ptr pointCloud)
+void ObjectTracker::update(Cloud::Ptr pointCloud)
 {
   runICP(pointCloud);
 }
@@ -71,19 +82,12 @@ void ObjectTracker::setLogWarningCallback(
   m_logWarn = logWarn;
 }
 
-static Eigen::Vector3f pcl2eig(pcl::PointXYZ p)
+bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
 {
-  return Eigen::Vector3f(p.x, p.y, p.z);
-}
+  // we need to mutate the cloud by deleting points
+  // once they are assigned to an object
+  Cloud::Ptr markers(new Cloud(*markersConst));
 
-static pcl::PointXYZ eig2pcl(Eigen::Vector3f v)
-{
-  return pcl::PointXYZ(v.x(), v.y(), v.z());
-}
-
-bool ObjectTracker::initialize(
-  pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
-{
   size_t const nObjs = m_objects.size();
 
   ICP icp;
@@ -93,18 +97,17 @@ bool ObjectTracker::initialize(
   // prepare for knn query
   std::vector<int> nearestIdx;
   std::vector<float> nearestSqrDist;
-  pcl::KdTreeFLANN<pcl::PointXYZ> kdtree;
+  std::vector<int> correspondenceIndices;
+  pcl::KdTreeFLANN<Point> kdtree;
   kdtree.setInputCloud(markers);
-
-  auto center = [this](size_t i) 
-    { return m_objects[i].m_lastTransformation.translation(); };
 
   // compute the distance between the closest 2 objects in the nominal configuration
   // we will use this value to limit allowed deviation from nominal positions
   float closest = FLT_MAX;
   for (int i = 0; i < nObjs; ++i) {
+    auto pi = m_objects[i].center();
     for (int j = i + 1; j < nObjs; ++j) {
-      float dist = (center(i) - center(j)).norm();
+      float dist = (pi - m_objects[j].center()).norm();
       closest = std::min(closest, dist);
     }
   }
@@ -114,35 +117,34 @@ bool ObjectTracker::initialize(
     "to %f meters\n", max_deviation);
 
   bool allFitsGood = true;
-  // for (Object &object: m_objects)
-  for (size_t i = 0; i < m_objects.size(); ++i) {
-    Object& object = m_objects[i];
-    pcl::PointCloud<pcl::PointXYZ>::Ptr &objMarkers =
+  for (Object &object: m_objects) {
+
+    Cloud::Ptr &objMarkers =
       m_markerConfigurations[object.m_markerConfigurationIdx];
     icp.setInputSource(objMarkers);
 
     // find the points nearest to the object's nominal position
+    // (initial pos was loaded into lastTransformation from config file)
     size_t const objNpts = objMarkers->size();
     nearestIdx.resize(objNpts);
     nearestSqrDist.resize(objNpts);
-    // initial pos was loaded into lastTransformation from config file
-    auto nominalCenter = eig2pcl(center(i));
+    auto nominalCenter = eig2pcl(object.center());
     kdtree.nearestKSearch(nominalCenter, objNpts, nearestIdx, nearestSqrDist);
 
-    // compute centroid of nearest points
+    // only try to fit the object if the k nearest neighbors
+    // are reasonably close to the nominal object position
     Eigen::Vector3f actualCenter(0, 0, 0);
     for (int i = 0; i < objNpts; ++i) {
       actualCenter += pcl2eig((*markers)[nearestIdx[i]]);
     }
     actualCenter /= objNpts;
-
     if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
       allFitsGood = false;
       continue;
     }
 
     // try ICP with guesses of many different yaws about knn centroid
-    pcl::PointCloud<pcl::PointXYZ> result;
+    Cloud result;
     static int const N_YAW = 20;
     double bestErr = DBL_MAX;
     Eigen::Affine3f bestTransformation;
@@ -160,28 +162,39 @@ bool ObjectTracker::initialize(
     }
 
     // check that the best fit was actually good
-    static double const INIT_MAX_HAUSDORFF_DIST2 = 0.008 * 0.008; // 8mm
+    static double const INIT_MAX_HAUSDORFF_DIST2 = 0.005 * 0.005; // 5mm
     nearestIdx.resize(1);
     nearestSqrDist.resize(1);
+    correspondenceIndices.resize(objNpts);
+    bool fitGood = true;
     for (size_t i = 0; i < objNpts; ++i) {
-      pcl::PointXYZ p = (*objMarkers)[i];
-      Eigen::Vector3f p2 = bestTransformation * Eigen::Vector3f(p.x, p.y, p.z);
-      pcl::PointXYZ p3 = pcl::PointXYZ(p2.x(), p2.y(), p2.z());
-      kdtree.nearestKSearch(p3, 1, nearestIdx, nearestSqrDist);
+      auto p = bestTransformation * pcl2eig((*objMarkers)[i]);
+      kdtree.nearestKSearch(eig2pcl(p), 1, nearestIdx, nearestSqrDist);
+      correspondenceIndices[i] = nearestIdx[0];
       if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
-        allFitsGood = false;
-      }
-      else {
-        object.m_lastTransformation = bestTransformation;
+        fitGood = false;
       }
     }
+
+    // if the fit was good, this object "takes" the markers, and they become
+    // unavailable to all other objects so we don't double-assign markers
+    // (TODO: this is so greedy... do we need a more global approach?)
+    if (fitGood) {
+      object.m_lastTransformation = bestTransformation;
+      for (int idx : correspondenceIndices) {
+        markers->erase(markers->begin() + idx);
+      }
+      // update search structures after deleting markers
+      icp.setInputTarget(markers);
+      kdtree.setInputCloud(markers);
+    }
+    allFitsGood = allFitsGood && fitGood;
   }
 
   return allFitsGood;
 }
 
-void ObjectTracker::runICP(
-  const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers)
+void ObjectTracker::runICP(Cloud::ConstPtr markers)
 {
   auto stamp = std::chrono::high_resolution_clock::now();
   m_initialized = m_initialized || initialize(markers);
@@ -193,9 +206,9 @@ void ObjectTracker::runICP(
   }
 
   ICP icp;
-  // pcl::registration::TransformationEstimationLM<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimationLM<pcl::PointXYZ, pcl::PointXYZ>);
-  // pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation2D<pcl::PointXYZ, pcl::PointXYZ>);
-  // pcl::registration::TransformationEstimation3DYaw<pcl::PointXYZ, pcl::PointXYZ>::Ptr trans(new pcl::registration::TransformationEstimation3DYaw<pcl::PointXYZ, pcl::PointXYZ>);
+  // pcl::registration::TransformationEstimationLM<Point, Point>::Ptr trans(new pcl::registration::TransformationEstimationLM<Point, Point>);
+  // pcl::registration::TransformationEstimation2D<Point, Point>::Ptr trans(new pcl::registration::TransformationEstimation2D<Point, Point>);
+  // pcl::registration::TransformationEstimation3DYaw<Point, Point>::Ptr trans(new pcl::registration::TransformationEstimation3DYaw<Point, Point>);
   // icp.setTransformationEstimation(trans);
 
 
@@ -208,9 +221,7 @@ void ObjectTracker::runICP(
 
   icp.setInputTarget(markers);
 
-  // for (auto& object : m_objects) {
-  for (size_t i = 0; i < m_objects.size(); ++i) {
-    Object& object = m_objects[i];
+  for (auto& object : m_objects) {
     object.m_lastTransformationValid = false;
 
     std::chrono::duration<double> elapsedSeconds = stamp-object.m_lastValidTransform;
@@ -227,7 +238,7 @@ void ObjectTracker::runICP(
     icp.setInputSource(m_markerConfigurations[object.m_markerConfigurationIdx]);
 
     // Perform the alignment
-    pcl::PointCloud<pcl::PointXYZ> result;
+    Cloud result;
     icp.align(result, object.m_lastTransformation.matrix());
     if (!icp.hasConverged()) {
       // ros::Time t = ros::Time::now();
