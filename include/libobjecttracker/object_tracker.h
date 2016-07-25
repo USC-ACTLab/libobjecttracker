@@ -39,6 +39,7 @@ namespace libobjecttracker {
     size_t m_markerConfigurationIdx;
     size_t m_dynamicsConfigurationIdx;
     Eigen::Affine3f m_lastTransformation;
+    Eigen::Vector3f m_velocity;
     std::chrono::time_point<std::chrono::high_resolution_clock> m_lastValidTransform;
     bool m_lastTransformationValid;
 

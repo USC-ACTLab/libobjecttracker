@@ -239,7 +239,9 @@ void ObjectTracker::runICP(Cloud::ConstPtr markers)
 
     // Perform the alignment
     Cloud result;
-    icp.align(result, object.m_lastTransformation.matrix());
+    auto deltaPos = Eigen::Translation3f(dt * object.m_velocity);
+    auto predictTransform = deltaPos * object.m_lastTransformation;
+    icp.align(result, predictTransform.matrix());
     if (!icp.hasConverged()) {
       // ros::Time t = ros::Time::now();
       // ROS_INFO("ICP did not converge %d.%d", t.sec, t.nsec);
@@ -277,7 +279,7 @@ void ObjectTracker::runICP(Cloud::ConstPtr markers)
         && fabs(pitch) < dynConf.maxPitch
         && icp.getFitnessScore() < dynConf.maxFitnessScore)
     {
-
+      object.m_velocity = (tROTA.translation() - object.center()) / dt;
       object.m_lastTransformation = tROTA;
       object.m_lastValidTransform = stamp;
       object.m_lastTransformationValid = true;
