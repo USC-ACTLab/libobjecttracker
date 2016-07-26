@@ -32,7 +32,7 @@ namespace libobjecttracker {
 			auto millis = std::chrono::duration_cast<std::chrono::milliseconds>
 				(stamp - start).count();
 			timestamps.push_back(millis);
-			clouds.push_back(cloud);
+			clouds.emplace_back(new pcl::PointCloud<pcl::PointXYZ>(*cloud));
 		}
 
 		void flush()
