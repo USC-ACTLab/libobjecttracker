@@ -35,6 +35,10 @@ namespace libobjecttracker {
 
     bool lastTransformationValid() const;
 
+    std::chrono::time_point<std::chrono::high_resolution_clock> lastValidTime() const {
+      return m_lastValidTransform;
+    }
+
   private:
     size_t m_markerConfigurationIdx;
     size_t m_dynamicsConfigurationIdx;

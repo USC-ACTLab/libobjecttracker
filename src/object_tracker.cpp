@@ -25,6 +25,11 @@ static Point eig2pcl(Eigen::Vector3f v)
   return Point(v.x(), v.y(), v.z());
 }
 
+static float deltaAngle(float a, float b)
+{
+  return atan2(sin(a-b), cos(a-b));
+}
+
 namespace libobjecttracker {
 
 /////////////////////////////////////////////////////////////
@@ -91,6 +96,10 @@ void ObjectTracker::setLogWarningCallback(
 
 bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
 {
+  if (markersConst->size() == 0) {
+    return false;
+  }
+
   // we need to mutate the cloud by deleting points
   // once they are assigned to an object
   Cloud::Ptr markers(new Cloud(*markersConst));
@@ -140,7 +149,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
       nominalCenter, objNpts, nearestIdx, nearestSqrDist);
 
     if (nFound < objNpts) {
-      std::cout << "error: only " << nFound 
+      std::cout << "error: only " << nFound
                 << " neighbors found for object " << iObj
                 << " (need " << objNpts << ")\n";
       allFitsGood = false;
@@ -230,6 +239,13 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
 void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
   Cloud::ConstPtr markers)
 {
+  if (markers->empty()) {
+    for (auto& object : m_objects) {
+      object.m_lastTransformationValid = false;
+    }
+    return;
+  }
+
   m_initialized = m_initialized || initialize(markers);
   if (!m_initialized) {
     logWarn(
@@ -272,8 +288,9 @@ void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
 
     // Perform the alignment
     Cloud result;
-    auto deltaPos = Eigen::Translation3f(dt * object.m_velocity);
-    auto predictTransform = deltaPos * object.m_lastTransformation;
+    // auto deltaPos = Eigen::Translation3f(dt * object.m_velocity);
+    // auto predictTransform = deltaPos * object.m_lastTransformation;
+    auto predictTransform = object.m_lastTransformation;
     icp.align(result, predictTransform.matrix());
     if (!icp.hasConverged()) {
       // ros::Time t = ros::Time::now();
@@ -296,9 +313,9 @@ void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
     float vx = (x - last_x) / dt;
     float vy = (y - last_y) / dt;
     float vz = (z - last_z) / dt;
-    float wroll = (roll - last_roll) / dt;
-    float wpitch = (pitch - last_pitch) / dt;
-    float wyaw = (yaw - last_yaw) / dt;
+    float wroll = deltaAngle(roll, last_roll) / dt;
+    float wpitch = deltaAngle(pitch, last_pitch) / dt;
+    float wyaw = deltaAngle(yaw, last_yaw) / dt;
 
     // ROS_INFO("v: %f,%f,%f, w: %f,%f,%f, dt: %f", vx, vy, vz, wroll, wpitch, wyaw, dt);
 
