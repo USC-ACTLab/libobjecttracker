@@ -136,7 +136,16 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     nearestIdx.resize(objNpts);
     nearestSqrDist.resize(objNpts);
     auto nominalCenter = eig2pcl(object.center());
-    kdtree.nearestKSearch(nominalCenter, objNpts, nearestIdx, nearestSqrDist);
+    int nFound = kdtree.nearestKSearch(
+      nominalCenter, objNpts, nearestIdx, nearestSqrDist);
+
+    if (nFound < objNpts) {
+      std::cout << "error: only " << nFound 
+                << " neighbors found for object " << iObj
+                << " (need " << objNpts << ")\n";
+      allFitsGood = false;
+      continue;
+    }
 
     // only try to fit the object if the k nearest neighbors
     // are reasonably close to the nominal object position
@@ -179,13 +188,21 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     bool fitGood = true;
     for (size_t i = 0; i < objNpts; ++i) {
       auto p = bestTransformation * pcl2eig((*objMarkers)[i]);
-      kdtree.nearestKSearch(eig2pcl(p), 1, nearestIdx, nearestSqrDist);
+      int nFound = kdtree.nearestKSearch(
+        eig2pcl(p), 1, nearestIdx, nearestSqrDist);
+      if (nFound != 1) {
+        fitGood = false;
+        std::cout << "error: marker " << i << " in object "
+                  << " has no nearest neighbor\n";
+        break;
+      }
       objTakePts[i] = nearestIdx[0];
       if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
         fitGood = false;
         std::cout << "error: nearest neighbor of marker " << i
                   << " in object " << iObj << " is "
                   << 1000 * sqrt(nearestSqrDist[0]) << "mm from nominal\n";
+        break;
       }
     }
 
