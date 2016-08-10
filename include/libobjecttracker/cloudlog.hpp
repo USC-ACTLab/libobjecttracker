@@ -5,6 +5,7 @@
 #include "libobjecttracker/object_tracker.h"
 
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <type_traits>
 
@@ -94,6 +95,7 @@ namespace libobjecttracker {
 		void play(libobjecttracker::ObjectTracker &tracker) const
 		{
 			for (int i = 0; i < clouds.size(); ++i) {
+				printf("\n  %d  ------------------------------\n\n", i);
 				auto dur = std::chrono::milliseconds(timestamps[i]);
 				std::chrono::high_resolution_clock::time_point stamp(dur);
 				tracker.update(stamp, clouds[i]);
