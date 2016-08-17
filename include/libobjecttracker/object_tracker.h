@@ -22,6 +22,7 @@ namespace libobjecttracker {
   };
 
   class ObjectTracker;
+  class PointCloudDebugger;
   class Object
   {
   public:
@@ -48,6 +49,7 @@ namespace libobjecttracker {
     bool m_lastTransformationValid;
 
     friend ObjectTracker;
+    friend PointCloudDebugger;
   };
 
   typedef pcl::PointCloud<pcl::PointXYZ>::Ptr MarkerConfiguration;
