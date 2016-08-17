@@ -58,7 +58,7 @@ namespace libobjecttracker {
 			file.flush();
 		}
 
-	private:
+	protected:
 		template <typename T>
 		void write(std::ofstream &s, T const &t)
 		{
@@ -107,7 +107,7 @@ namespace libobjecttracker {
 			}
 		}
 
-	private:
+	protected:
 		template <typename T>
 		T read(std::ifstream &s)
 		{
@@ -119,48 +119,11 @@ namespace libobjecttracker {
 		std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds;
 	};
 
-	class PointCloudDebugger
+	class PointCloudDebugger : public PointCloudPlayer
 	{
 
 	public:
-		PointCloudDebugger(std::string file_path) : writepath(file_path)
-		{
-		}
-		void load(std::string path)
-		{
-			std::ifstream s(path, std::ios::binary | std::ios::in);
-			if (!s) {
-				throw std::runtime_error("PointCloudPlayer: bad file path.");
-			}
-			while (s) {
-				uint32_t millis = read<uint32_t>(s);
-				// TODO cleaner loop?
-				if (!s) {
-					break;
-				}
-				timestamps.push_back(millis);
-
-				uint32_t size = read<uint32_t>(s);
-				clouds.emplace_back(new pcl::PointCloud<pcl::PointXYZ>());
-				clouds.back()->resize(size);
-				for (uint32_t i = 0; i < size; ++i) {
-					float x = read<float>(s);
-					float y = read<float>(s);
-					float z = read<float>(s);
-					(*clouds.back())[i] = pcl::PointXYZ(x, y, z);
-				}
-			}
-		}
-
-		void play(libobjecttracker::ObjectTracker &tracker) const
-		{
-			for (size_t i = 0; i < clouds.size(); ++i) {
-				printf("\n  %d  ------------------------------\n", i);
-				auto dur = std::chrono::milliseconds(timestamps[i]);
-				std::chrono::high_resolution_clock::time_point stamp(dur);
-				tracker.update(stamp, clouds[i]);
-			}
-		}
+		PointCloudDebugger(std::string file_path) : writepath(file_path) {}
 
 		void convert(libobjecttracker::ObjectTracker & tracker, std::vector<MarkerConfiguration> & config)
 		{
@@ -213,21 +176,12 @@ namespace libobjecttracker {
 
 	private:
 		template <typename T>
-		T read(std::ifstream &s)
-		{
-			T t;
-			s.read((char *)&t, sizeof(t));
-			return t;
-		}
-		template <typename T>
 		void write(std::ofstream &s, T const &t)
 		{
 			s.write((char const *)&t, sizeof(T));
 		}
 		std::string writepath;
 		std::string path;
-		std::vector<uint32_t> timestamps;
-		std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> clouds;
 		std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> matches;
 	};
 
