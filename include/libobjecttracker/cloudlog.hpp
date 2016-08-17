@@ -30,35 +30,32 @@ namespace libobjecttracker {
 	class PointCloudLogger
 	{
 	public:
-		PointCloudLogger(std::string file_path) : path(file_path)
+		PointCloudLogger(std::string file_path) : file(file_path, std::ios::binary | std::ios::out)
 		{
 		}
 
 		void log(pcl::PointCloud<pcl::PointXYZ>::ConstPtr cloud)
 		{
 			auto stamp = std::chrono::high_resolution_clock::now();
-			if (clouds.empty()) {
+			if (start == (decltype(start)())) {
 				start = stamp;
 			}
 			auto millis = std::chrono::duration_cast<std::chrono::milliseconds>
 				(stamp - start).count();
-			timestamps.push_back(millis);
-			clouds.emplace_back(new pcl::PointCloud<pcl::PointXYZ>(*cloud));
+
+			write<uint32_t>(file, millis);
+			write<uint32_t>(file, cloud->size());
+			for (pcl::PointXYZ const &p : *cloud) {
+				static_assert(std::is_same<decltype(p.x), float>::value, "expected float");
+				write(file, p.x);
+				write(file, p.y);
+				write(file, p.z);
+			}
 		}
 
 		void flush()
 		{
-			std::ofstream s(path, std::ios::binary | std::ios::out);
-			for (size_t i = 0; i < clouds.size(); ++i) {
-				write(s, timestamps[i]);
-				write(s, (uint32_t)clouds[i]->size());
-				for (pcl::PointXYZ const &p : *(clouds[i])) {
-					static_assert(std::is_same<decltype(p.x), float>::value, "expected float");
-					write(s, p.x);
-					write(s, p.y);
-					write(s, p.z);
-				}
-			}
+			file.flush();
 		}
 
 	private:
@@ -67,10 +64,8 @@ namespace libobjecttracker {
 		{
 			s.write((char const *)&t, sizeof(T));
 		}
-		std::string path;
+		std::ofstream file;
 		std::chrono::high_resolution_clock::time_point start;
-		std::vector<uint32_t> timestamps;
-		std::vector<pcl::PointCloud<pcl::PointXYZ>::ConstPtr> clouds;
 	};
 
 	class PointCloudPlayer
