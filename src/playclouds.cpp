@@ -137,8 +137,14 @@ int main(int argc, char **argv)
     objects);
 
   tracker.setLogWarningCallback(&log_stderr);
-
-  PointCloudPlayer player;
-  player.load(argv[1]);
-  player.play(tracker);
+  if (argc < 3) {
+    PointCloudPlayer player;
+    player.load(argv[1]);
+    player.play(tracker);
+  }
+  else {
+    PointCloudDebugger debugger(argv[2]);
+    debugger.load(argv[1]);
+    debugger.convert(tracker,markerConfigurations);
+  }
 }
