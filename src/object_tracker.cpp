@@ -41,6 +41,7 @@ Object::Object(
   : m_markerConfigurationIdx(markerConfigurationIdx)
   , m_dynamicsConfigurationIdx(dynamicsConfigurationIdx)
   , m_lastTransformation(initialTransformation)
+  , m_initialTransformation(initialTransformation)
   , m_lastValidTransform()
   , m_lastTransformationValid(false)
 {
@@ -49,6 +50,11 @@ Object::Object(
 const Eigen::Affine3f& Object::transformation() const
 {
   return m_lastTransformation;
+}
+
+const Eigen::Affine3f& Object::initialTransformation() const
+{
+  return m_initialTransformation;
 }
 
 bool Object::lastTransformationValid() const
@@ -121,9 +127,9 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
   // we will use this value to limit allowed deviation from nominal positions
   float closest = FLT_MAX;
   for (int i = 0; i < nObjs; ++i) {
-    auto pi = m_objects[i].center();
+    auto pi = m_objects[i].initialCenter();
     for (int j = i + 1; j < nObjs; ++j) {
-      float dist = (pi - m_objects[j].center()).norm();
+      float dist = (pi - m_objects[j].initialCenter()).norm();
       closest = std::min(closest, dist);
     }
   }
@@ -144,7 +150,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     size_t const objNpts = objMarkers->size();
     nearestIdx.resize(objNpts);
     nearestSqrDist.resize(objNpts);
-    auto nominalCenter = eig2pcl(object.center());
+    auto nominalCenter = eig2pcl(object.initialCenter());
     int nFound = kdtree.nearestKSearch(
       nominalCenter, objNpts, nearestIdx, nearestSqrDist);
 
@@ -252,6 +258,8 @@ void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
       "Object tracker initialization failed - "
       "check that position is correct, all markers are visible, "
       "and marker configuration matches config file");
+    // Doesn't make too much sense to continue here - lets wait to be fully initialized
+    return;
   }
 
   ICP icp;

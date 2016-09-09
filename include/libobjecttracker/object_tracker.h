@@ -33,6 +33,9 @@ namespace libobjecttracker {
     const Eigen::Affine3f& transformation() const;
     Eigen::Vector3f center() const { return m_lastTransformation.translation(); }
 
+    const Eigen::Affine3f& initialTransformation() const;
+    Eigen::Vector3f initialCenter() const { return m_initialTransformation.translation(); }
+
     bool lastTransformationValid() const;
 
     std::chrono::time_point<std::chrono::high_resolution_clock> lastValidTime() const {
@@ -43,6 +46,7 @@ namespace libobjecttracker {
     size_t m_markerConfigurationIdx;
     size_t m_dynamicsConfigurationIdx;
     Eigen::Affine3f m_lastTransformation;
+    const Eigen::Affine3f m_initialTransformation;
     Eigen::Vector3f m_velocity;
     std::chrono::time_point<std::chrono::high_resolution_clock> m_lastValidTransform;
     bool m_lastTransformationValid;
