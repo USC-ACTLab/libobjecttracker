@@ -135,8 +135,8 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
   }
   float const max_deviation = closest / 3;
 
-  printf("Object tracker: limiting distance from nominal position "
-    "to %f meters\n", max_deviation);
+  //printf("Object tracker: limiting distance from nominal position "
+  //  "to %f meters\n", max_deviation);
 
   bool allFitsGood = true;
   for (int iObj = 0; iObj < nObjs; ++iObj) {
@@ -155,9 +155,11 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
       nominalCenter, objNpts, nearestIdx, nearestSqrDist);
 
     if (nFound < objNpts) {
-      std::cout << "error: only " << nFound
-                << " neighbors found for object " << iObj
-                << " (need " << objNpts << ")\n";
+      std::stringstream sstr;
+      sstr << "error: only " << nFound
+           << " neighbors found for object " << iObj
+           << " (need " << objNpts << ")";
+      logWarn(sstr.str());
       allFitsGood = false;
       continue;
     }
@@ -170,9 +172,11 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
     }
     actualCenter /= objNpts;
     if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
-      std::cout << "error: nearest neighbors of object " << iObj
-                << " are centered at " << actualCenter
-                << " instead of " << nominalCenter << "\n";
+      std::stringstream sstr;
+      sstr << "error: nearest neighbors of object " << iObj
+           << " are centered at " << actualCenter
+           << " instead of " << nominalCenter;
+      logWarn(sstr.str());
       allFitsGood = false;
       continue;
     }
@@ -188,54 +192,34 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
         actualCenter.x(), actualCenter.y(), actualCenter.z(),
         0, 0, yaw).matrix();
       icp.align(result, tryMatrix);
-      double err = icp.getFitnessScore();
-      if (err < bestErr) {
-        bestErr = err;
-        bestTransformation = icp.getFinalTransformation();
+      if (icp.hasConverged()) {
+        double err = icp.getFitnessScore();
+        if (err < bestErr) {
+          bestErr = err;
+          bestTransformation = icp.getFinalTransformation();
+        }
       }
     }
 
-    // check that the best fit was actually good
-    static double const INIT_MAX_HAUSDORFF_DIST2 = 0.005 * 0.005; // 5mm
-    nearestIdx.resize(1);
-    nearestSqrDist.resize(1);
-    objTakePts.resize(objNpts);
-    bool fitGood = true;
-    for (size_t i = 0; i < objNpts; ++i) {
-      auto p = bestTransformation * pcl2eig((*objMarkers)[i]);
-      int nFound = kdtree.nearestKSearch(
-        eig2pcl(p), 1, nearestIdx, nearestSqrDist);
-      if (nFound != 1) {
-        fitGood = false;
-        std::cout << "error: marker " << i << " in object "
-                  << " has no nearest neighbor\n";
-        break;
-      }
-      objTakePts[i] = nearestIdx[0];
-      if (nearestSqrDist[0] > INIT_MAX_HAUSDORFF_DIST2) {
-        fitGood = false;
-        std::cout << "error: nearest neighbor of marker " << i
-                  << " in object " << iObj << " is "
-                  << 1000 * sqrt(nearestSqrDist[0]) << "mm from nominal\n";
-        break;
-      }
+    const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.m_dynamicsConfigurationIdx];
+    if (bestErr >= dynConf.maxFitnessScore) {
+      logWarn("Initialize did not succeed (fitness too low).");
+      allFitsGood = false;
+      continue;
     }
 
     // if the fit was good, this object "takes" the markers, and they become
     // unavailable to all other objects so we don't double-assign markers
     // (TODO: this is so greedy... do we need a more global approach?)
-    if (fitGood) {
-      object.m_lastTransformation = bestTransformation;
-      // remove highest indices first
-      std::sort(objTakePts.rbegin(), objTakePts.rend());
-      for (int idx : objTakePts) {
-        markers->erase(markers->begin() + idx);
-      }
-      // update search structures after deleting markers
-      icp.setInputTarget(markers);
-      kdtree.setInputCloud(markers);
+    object.m_lastTransformation = bestTransformation;
+    // remove highest indices first
+    std::sort(objTakePts.rbegin(), objTakePts.rend());
+    for (int idx : objTakePts) {
+      markers->erase(markers->begin() + idx);
     }
-    allFitsGood = allFitsGood && fitGood;
+    // update search structures after deleting markers
+    icp.setInputTarget(markers);
+    kdtree.setInputCloud(markers);
   }
 
   ++m_init_attempts;
