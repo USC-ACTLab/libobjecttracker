@@ -71,11 +71,22 @@ ObjectTracker::ObjectTracker(
   : m_markerConfigurations(markerConfigurations)
   , m_dynamicsConfigurations(dynamicsConfigurations)
   , m_objects(objects)
+  , m_trackPositionOnly(false)
   , m_initialized(false)
   , m_init_attempts(0)
   , m_logWarn()
 {
+  // if at least one of the used marker configurations only has one marker,
+  // then switch to position only tracking
 
+  for (const Object& object : m_objects) {
+    Cloud::Ptr &objMarkers = m_markerConfigurations[object.m_markerConfigurationIdx];
+    size_t const objNpts = objMarkers->size();
+    if (objNpts == 1) {
+      m_trackPositionOnly = true;
+      break;
+    }
+  }
 }
 
 void ObjectTracker::update(Cloud::Ptr pointCloud)
@@ -86,7 +97,11 @@ void ObjectTracker::update(Cloud::Ptr pointCloud)
 void ObjectTracker::update(std::chrono::high_resolution_clock::time_point time,
   Cloud::Ptr pointCloud)
 {
-  runICP(time, pointCloud);
+  if (m_trackPositionOnly) {
+    updatePosition(time, pointCloud);
+  } else {
+    updatePose(time, pointCloud);
+  }
 }
 
 const std::vector<Object>& ObjectTracker::objects() const
@@ -100,7 +115,7 @@ void ObjectTracker::setLogWarningCallback(
   m_logWarn = logWarn;
 }
 
-bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
+bool ObjectTracker::initializePose(Cloud::ConstPtr markersConst)
 {
   if (markersConst->size() == 0) {
     return false;
@@ -226,7 +241,7 @@ bool ObjectTracker::initialize(Cloud::ConstPtr markersConst)
   return allFitsGood;
 }
 
-void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
+void ObjectTracker::updatePose(std::chrono::high_resolution_clock::time_point stamp,
   Cloud::ConstPtr markers)
 {
   if (markers->empty()) {
@@ -236,7 +251,7 @@ void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
     return;
   }
 
-  m_initialized = m_initialized || initialize(markers);
+  m_initialized = m_initialized || initializePose(markers);
   if (!m_initialized) {
     logWarn(
       "Object tracker initialization failed - "
@@ -354,6 +369,196 @@ void ObjectTracker::runICP(std::chrono::high_resolution_clock::time_point stamp,
       }
       if (icp.getFitnessScore() >= dynConf.maxFitnessScore) {
         sstr << "fitness: " << icp.getFitnessScore() << " >= " << dynConf.maxFitnessScore << std::endl;
+      }
+      logWarn(sstr.str());
+    }
+  }
+
+}
+
+bool ObjectTracker::initializePosition(Cloud::ConstPtr markersConst)
+{
+  if (markersConst->size() == 0) {
+    return false;
+  }
+
+  // we need to mutate the cloud by deleting points
+  // once they are assigned to an object
+  Cloud::Ptr markers(new Cloud(*markersConst));
+
+  size_t const nObjs = m_objects.size();
+
+  // prepare for knn query
+  std::vector<int> nearestIdx;
+  std::vector<float> nearestSqrDist;
+  std::vector<int> objTakePts;
+  pcl::KdTreeFLANN<Point> kdtree;
+  kdtree.setInputCloud(markers);
+
+  // compute the distance between the closest 2 objects in the nominal configuration
+  // we will use this value to limit allowed deviation from nominal positions
+  float closest = FLT_MAX;
+  for (int i = 0; i < nObjs; ++i) {
+    auto pi = m_objects[i].initialCenter();
+    for (int j = i + 1; j < nObjs; ++j) {
+      float dist = (pi - m_objects[j].initialCenter()).norm();
+      closest = std::min(closest, dist);
+    }
+  }
+  float const max_deviation = closest / 3;
+
+  //printf("Object tracker: limiting distance from nominal position "
+  //  "to %f meters\n", max_deviation);
+
+  bool allFitsGood = true;
+  for (int iObj = 0; iObj < nObjs; ++iObj) {
+    Object& object = m_objects[iObj];
+    Cloud::Ptr &objMarkers =
+      m_markerConfigurations[object.m_markerConfigurationIdx];
+
+    // find the points nearest to the object's nominal position
+    // (initial pos was loaded into lastTransformation from config file)
+    size_t const objNpts = objMarkers->size();
+    nearestIdx.resize(objNpts);
+    nearestSqrDist.resize(objNpts);
+    auto nominalCenter = eig2pcl(object.initialCenter());
+    int nFound = kdtree.nearestKSearch(
+      nominalCenter, objNpts, nearestIdx, nearestSqrDist);
+
+    if (nFound < objNpts) {
+      std::stringstream sstr;
+      sstr << "error: only " << nFound
+           << " neighbors found for object " << iObj
+           << " (need " << objNpts << ")";
+      logWarn(sstr.str());
+      allFitsGood = false;
+      continue;
+    }
+
+    // only try to fit the object if the k nearest neighbors
+    // are reasonably close to the nominal object position
+    objTakePts.clear();
+    Eigen::Vector3f actualCenter(0, 0, 0);
+    for (int i = 0; i < objNpts; ++i) {
+      actualCenter += pcl2eig((*markers)[nearestIdx[i]]);
+      objTakePts.push_back(nearestIdx[i]);
+    }
+    actualCenter /= objNpts;
+    if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
+      std::stringstream sstr;
+      sstr << "error: nearest neighbors of object " << iObj
+           << " are centered at " << actualCenter
+           << " instead of " << nominalCenter;
+      logWarn(sstr.str());
+      allFitsGood = false;
+      continue;
+    }
+
+
+    // if the fit was good, this object "takes" the markers, and they become
+    // unavailable to all other objects so we don't double-assign markers
+    // (TODO: this is so greedy... do we need a more global approach?)
+    object.m_lastTransformation = Eigen::Translation3f(actualCenter);
+    // remove highest indices first
+    std::sort(objTakePts.rbegin(), objTakePts.rend());
+    for (int idx : objTakePts) {
+      markers->erase(markers->begin() + idx);
+    }
+    // update search structures after deleting markers
+    kdtree.setInputCloud(markers);
+  }
+
+  ++m_init_attempts;
+  return allFitsGood;
+}
+
+void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_point stamp,
+  Cloud::ConstPtr markers)
+{
+  if (markers->empty()) {
+    for (auto& object : m_objects) {
+      object.m_lastTransformationValid = false;
+    }
+    return;
+  }
+
+  m_initialized = m_initialized || initializePosition(markers);
+  if (!m_initialized) {
+    logWarn(
+      "Object tracker initialization failed - "
+      "check that position is correct, all markers are visible, "
+      "and marker configuration matches config file");
+    // Doesn't make too much sense to continue here - lets wait to be fully initialized
+    return;
+  }
+
+  // prepare for knn query
+  std::vector<int> nearestIdx(1);
+  std::vector<float> nearestSqrDist(1);
+  pcl::KdTreeFLANN<Point> kdtree;
+  kdtree.setInputCloud(markers);
+
+  size_t const nObjs = m_objects.size();
+  for (int iObj = 0; iObj < nObjs; ++iObj) {
+    Object& object = m_objects[iObj];
+
+    object.m_lastTransformationValid = false;
+
+    std::chrono::duration<double> elapsedSeconds = stamp-object.m_lastValidTransform;
+    double dt = elapsedSeconds.count();
+
+    // Set the max correspondence distance
+    // TODO: take max here?
+    const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.m_dynamicsConfigurationIdx];
+    float maxV = dynConf.maxXVelocity;
+
+    auto nominalCenter = eig2pcl(object.center());
+    int nFound = kdtree.nearestKSearch(
+      nominalCenter, 1, nearestIdx, nearestSqrDist);
+
+    if (nFound < 1) {
+      std::stringstream sstr;
+      sstr << "error: no "
+           << " neighbors found for object " << iObj;
+      logWarn(sstr.str());
+      continue;
+    }
+
+    if (nearestSqrDist[0] > maxV * dt * maxV * dt) {
+      std::stringstream sstr;
+      sstr << "error: no "
+           << " nearby markers found for object " << iObj;
+      logWarn(sstr.str());
+      continue;
+    }
+
+    Eigen::Vector3f center = pcl2eig((*markers)[nearestIdx[0]]);
+
+    // Compute changes:
+    Eigen::Vector3f velocity = (center - object.center()) / dt;
+    float vx = velocity.x();
+    float vy = velocity.y();
+    float vz = velocity.z();
+
+    if (   fabs(vx) < dynConf.maxXVelocity
+        && fabs(vy) < dynConf.maxYVelocity
+        && fabs(vz) < dynConf.maxZVelocity)
+    {
+      object.m_velocity = (center - object.center()) / dt;
+      object.m_lastTransformation = Eigen::Translation3f(center);;
+      object.m_lastValidTransform = stamp;
+      object.m_lastTransformationValid = true;
+    } else {
+      std::stringstream sstr;
+      sstr << "Dynamic check failed" << std::endl;
+      if (fabs(vx) >= dynConf.maxXVelocity) {
+        sstr << "vx: " << vx << " >= " << dynConf.maxXVelocity << std::endl;
+      }
+      if (fabs(vy) >= dynConf.maxYVelocity) {
+        sstr << "vy: " << vy << " >= " << dynConf.maxYVelocity << std::endl;
+      }
+      if (fabs(vz) >= dynConf.maxZVelocity) {
+        sstr << "vz: " << vz << " >= " << dynConf.maxZVelocity << std::endl;
       }
       logWarn(sstr.str());
     }

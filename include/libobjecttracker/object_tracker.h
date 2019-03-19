@@ -79,10 +79,18 @@ namespace libobjecttracker {
       std::function<void(const std::string&)> logWarn);
 
   private:
-    void runICP(std::chrono::high_resolution_clock::time_point stamp,
+    // Update and init using ICP
+    void updatePose(std::chrono::high_resolution_clock::time_point stamp,
       const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
 
-    bool initialize(
+    bool initializePose(
+      pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
+
+    // Update and init using nearest neighbor
+    void updatePosition(std::chrono::high_resolution_clock::time_point stamp,
+      const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
+
+    bool initializePosition(
       pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
 
     void logWarn(const std::string& msg);
@@ -93,6 +101,7 @@ namespace libobjecttracker {
     std::vector<Object> m_objects;
     bool m_initialized;
     int m_init_attempts;
+    bool m_trackPositionOnly;
 
     std::function<void(const std::string&)> m_logWarn;
   };
