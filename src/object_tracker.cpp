@@ -37,13 +37,15 @@ namespace libobjecttracker {
 Object::Object(
   size_t markerConfigurationIdx,
   size_t dynamicsConfigurationIdx,
-  const Eigen::Affine3f& initialTransformation)
+  const Eigen::Affine3f& initialTransformation,
+  const std::string& name)
   : m_markerConfigurationIdx(markerConfigurationIdx)
   , m_dynamicsConfigurationIdx(dynamicsConfigurationIdx)
   , m_lastTransformation(initialTransformation)
   , m_initialTransformation(initialTransformation)
   , m_lastValidTransform()
   , m_lastTransformationValid(false)
+  , m_name(name)
 {
 }
 
@@ -172,7 +174,7 @@ bool ObjectTracker::initializePose(Cloud::ConstPtr markersConst)
     if (nFound < objNpts) {
       std::stringstream sstr;
       sstr << "error: only " << nFound
-           << " neighbors found for object " << iObj
+           << " neighbors found for object " << object.name()
            << " (need " << objNpts << ")";
       logWarn(sstr.str());
       allFitsGood = false;
@@ -188,7 +190,7 @@ bool ObjectTracker::initializePose(Cloud::ConstPtr markersConst)
     actualCenter /= objNpts;
     if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
       std::stringstream sstr;
-      sstr << "error: nearest neighbors of object " << iObj
+      sstr << "error: nearest neighbors of object " << object.name()
            << " are centered at " << actualCenter
            << " instead of " << nominalCenter;
       logWarn(sstr.str());
@@ -218,7 +220,10 @@ bool ObjectTracker::initializePose(Cloud::ConstPtr markersConst)
 
     const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.m_dynamicsConfigurationIdx];
     if (bestErr >= dynConf.maxFitnessScore) {
-      logWarn("Initialize did not succeed (fitness too low).");
+      std::stringstream sstr;
+      sstr << "Initialize did not succeed (fitness too low) "
+           << " for object " << object.name();
+      logWarn(sstr.str());
       allFitsGood = false;
       continue;
     }
@@ -302,7 +307,10 @@ void ObjectTracker::updatePose(std::chrono::high_resolution_clock::time_point st
     if (!icp.hasConverged()) {
       // ros::Time t = ros::Time::now();
       // ROS_INFO("ICP did not converge %d.%d", t.sec, t.nsec);
-      logWarn("ICP did not converge!");
+      std::stringstream sstr;
+      sstr << "ICP did not converge!"
+           << " for object " << object.name();
+      logWarn(sstr.str());
       continue;
     }
 
@@ -342,7 +350,7 @@ void ObjectTracker::updatePose(std::chrono::high_resolution_clock::time_point st
       object.m_lastTransformationValid = true;
     } else {
       std::stringstream sstr;
-      sstr << "Dynamic check failed" << std::endl;
+      sstr << "Dynamic check failed for object " << object.name() << std::endl;
       if (fabs(vx) >= dynConf.maxXVelocity) {
         sstr << "vx: " << vx << " >= " << dynConf.maxXVelocity << std::endl;
       }
@@ -428,7 +436,7 @@ bool ObjectTracker::initializePosition(Cloud::ConstPtr markersConst)
     if (nFound < objNpts) {
       std::stringstream sstr;
       sstr << "error: only " << nFound
-           << " neighbors found for object " << iObj
+           << " neighbors found for object " << object.name()
            << " (need " << objNpts << ")";
       logWarn(sstr.str());
       allFitsGood = false;
@@ -446,7 +454,7 @@ bool ObjectTracker::initializePosition(Cloud::ConstPtr markersConst)
     actualCenter /= objNpts;
     if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
       std::stringstream sstr;
-      sstr << "error: nearest neighbors of object " << iObj
+      sstr << "error: nearest neighbors of object " << object.name()
            << " are centered at " << actualCenter
            << " instead of " << nominalCenter;
       logWarn(sstr.str());
@@ -510,7 +518,6 @@ void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_poin
     // Set the max correspondence distance
     // TODO: take max here?
     const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.m_dynamicsConfigurationIdx];
-    float maxV = dynConf.maxXVelocity;
 
     auto nominalCenter = eig2pcl(object.center());
     int nFound = kdtree.nearestKSearch(
@@ -518,16 +525,7 @@ void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_poin
 
     if (nFound < 1) {
       std::stringstream sstr;
-      sstr << "error: no "
-           << " neighbors found for object " << iObj;
-      logWarn(sstr.str());
-      continue;
-    }
-
-    if (nearestSqrDist[0] > maxV * dt * maxV * dt) {
-      std::stringstream sstr;
-      sstr << "error: no "
-           << " nearby markers found for object " << iObj;
+      sstr << "error: no neighbors found for object " << object.name();
       logWarn(sstr.str());
       continue;
     }
@@ -550,7 +548,7 @@ void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_poin
       object.m_lastTransformationValid = true;
     } else {
       std::stringstream sstr;
-      sstr << "Dynamic check failed" << std::endl;
+      sstr << "Dynamic check failed for object " << object.name() << std::endl;
       if (fabs(vx) >= dynConf.maxXVelocity) {
         sstr << "vx: " << vx << " >= " << dynConf.maxXVelocity << std::endl;
       }
