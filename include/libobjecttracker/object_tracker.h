@@ -96,7 +96,7 @@ namespace libobjecttracker {
     void updatePosition(std::chrono::high_resolution_clock::time_point stamp,
       const pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
 
-    bool initializePosition(
+    bool initializePosition(std::chrono::high_resolution_clock::time_point stamp,
       pcl::PointCloud<pcl::PointXYZ>::ConstPtr markers);
 
     void logWarn(const std::string& msg);

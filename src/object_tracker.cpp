@@ -8,6 +8,8 @@
 #include <pcl/registration/transformation_estimation_2D.h>
 // #include <pcl/registration/transformation_estimation_lm.h>
 
+#include "assignment.hpp"
+
 // TEMP for debug
 #include <cstdio>
 
@@ -384,105 +386,45 @@ void ObjectTracker::updatePose(std::chrono::high_resolution_clock::time_point st
 
 }
 
-bool ObjectTracker::initializePosition(Cloud::ConstPtr markersConst)
+bool ObjectTracker::initializePosition(
+  std::chrono::high_resolution_clock::time_point stamp,
+  Cloud::ConstPtr markers)
 {
-  if (markersConst->size() == 0) {
-    return false;
-  }
+  // Here, we use a simple task assignment to find the best initial matching
+  libMultiRobotPlanning::Assignment<size_t, size_t> assignment;
 
-  // we need to mutate the cloud by deleting points
-  // once they are assigned to an object
-  Cloud::Ptr markers(new Cloud(*markersConst));
-
-  size_t const nObjs = m_objects.size();
-
-  // prepare for knn query
-  std::vector<int> nearestIdx;
-  std::vector<float> nearestSqrDist;
-  std::vector<int> objTakePts;
-  pcl::KdTreeFLANN<Point> kdtree;
-  kdtree.setInputCloud(markers);
-
-  // compute the distance between the closest 2 objects in the nominal configuration
-  // we will use this value to limit allowed deviation from nominal positions
-  float closest = FLT_MAX;
-  for (int i = 0; i < nObjs; ++i) {
-    auto pi = m_objects[i].initialCenter();
-    for (int j = i + 1; j < nObjs; ++j) {
-      float dist = (pi - m_objects[j].initialCenter()).norm();
-      closest = std::min(closest, dist);
+  for (size_t i = 0; i < markers->size(); ++i) {
+    Eigen::Vector3f marker = pcl2eig((*markers)[i]);
+    for (size_t j = 0; j < m_objects.size(); ++j) {
+      auto pi = m_objects[j].initialCenter();
+      float dist = (pi - marker).norm();
+      long cost = dist * 1000; // cost needs to be an integer -> convert to mm
+      assignment.setCost(j, i, cost);
     }
   }
-  float const max_deviation = closest / 3;
 
-  //printf("Object tracker: limiting distance from nominal position "
-  //  "to %f meters\n", max_deviation);
+  std::map<size_t, size_t> solution; // maps objectId->markerId
+  long totalCost = assignment.solve(solution);
 
-  bool allFitsGood = true;
-  for (int iObj = 0; iObj < nObjs; ++iObj) {
-    Object& object = m_objects[iObj];
-    Cloud::Ptr &objMarkers =
-      m_markerConfigurations[object.m_markerConfigurationIdx];
-
-    // find the points nearest to the object's nominal position
-    // (initial pos was loaded into lastTransformation from config file)
-    size_t const objNpts = objMarkers->size();
-    nearestIdx.resize(objNpts);
-    nearestSqrDist.resize(objNpts);
-    auto nominalCenter = eig2pcl(object.initialCenter());
-    int nFound = kdtree.nearestKSearch(
-      nominalCenter, objNpts, nearestIdx, nearestSqrDist);
-
-    if (nFound < objNpts) {
-      std::stringstream sstr;
-      sstr << "error: only " << nFound
-           << " neighbors found for object " << object.name()
-           << " (need " << objNpts << ")";
-      logWarn(sstr.str());
-      allFitsGood = false;
-      continue;
-    }
-
-    // only try to fit the object if the k nearest neighbors
-    // are reasonably close to the nominal object position
-    objTakePts.clear();
-    Eigen::Vector3f actualCenter(0, 0, 0);
-    for (int i = 0; i < objNpts; ++i) {
-      actualCenter += pcl2eig((*markers)[nearestIdx[i]]);
-      objTakePts.push_back(nearestIdx[i]);
-    }
-    actualCenter /= objNpts;
-    if ((actualCenter - pcl2eig(nominalCenter)).norm() > max_deviation) {
-      std::stringstream sstr;
-      sstr << "error: nearest neighbors of object " << object.name()
-           << " are centered at " << actualCenter
-           << " instead of " << nominalCenter;
-      logWarn(sstr.str());
-      allFitsGood = false;
-      continue;
-    }
-
-
-    // if the fit was good, this object "takes" the markers, and they become
-    // unavailable to all other objects so we don't double-assign markers
-    // (TODO: this is so greedy... do we need a more global approach?)
-    object.m_lastTransformation = Eigen::Translation3f(actualCenter);
-    // remove highest indices first
-    std::sort(objTakePts.rbegin(), objTakePts.rend());
-    for (int idx : objTakePts) {
-      markers->erase(markers->begin() + idx);
-    }
-    // update search structures after deleting markers
-    kdtree.setInputCloud(markers);
+  for (const auto& s : solution) {
+    auto& object = m_objects[s.first];
+    Eigen::Vector3f marker = pcl2eig((*markers)[s.second]);
+    object.m_lastTransformation = Eigen::Translation3f(marker);
+    object.m_lastValidTransform = stamp;
+    object.m_lastTransformationValid = true;
   }
 
-  ++m_init_attempts;
-  return allFitsGood;
+  return solution.size() == m_objects.size();
 }
 
 void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_point stamp,
   Cloud::ConstPtr markers)
 {
+  static std::chrono::high_resolution_clock::time_point lastCall;
+  std::chrono::duration<double> lastCallElapsedSeconds = stamp-lastCall;
+  double lastCalldt = lastCallElapsedSeconds.count();
+  lastCall = stamp;
+
   if (markers->empty()) {
     for (auto& object : m_objects) {
       object.m_lastTransformationValid = false;
@@ -490,19 +432,27 @@ void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_poin
     return;
   }
 
-  m_initialized = m_initialized || initializePosition(markers);
-  if (!m_initialized) {
-    logWarn(
-      "Object tracker initialization failed - "
-      "check that position is correct, all markers are visible, "
-      "and marker configuration matches config file");
+  // re-initialize, if we have not received an update in a long time
+  if (!m_initialized || lastCalldt > 0.4) {
+    m_initialized = initializePosition(stamp, markers);
+    if (!m_initialized) {
+      logWarn(
+        "Object tracker initialization failed - "
+        "check that position is correct, all markers are visible, "
+        "and marker configuration matches config file");
+    }
     // Doesn't make too much sense to continue here - lets wait to be fully initialized
     return;
   }
 
+  // In this case, we setup a task assignment problem, only considering markers that are in
+  // close proximity to the previously known position. If we do not have a match for a
+  // fixed amount of time, abandon that robot entirely (to avoid issues with spurios markers).
+  libMultiRobotPlanning::Assignment<size_t, size_t> assignment; // objectIdx -> markerIdx
+
   // prepare for knn query
-  std::vector<int> nearestIdx(1);
-  std::vector<float> nearestSqrDist(1);
+  std::vector<int> nearestIdx(5); // tune maximum number of neighbors here
+  std::vector<float> nearestSqrDist(nearestIdx.size());
   pcl::KdTreeFLANN<Point> kdtree;
   kdtree.setInputCloud(markers);
 
@@ -514,14 +464,16 @@ void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_poin
 
     std::chrono::duration<double> elapsedSeconds = stamp-object.m_lastValidTransform;
     double dt = elapsedSeconds.count();
-
-    // Set the max correspondence distance
-    // TODO: take max here?
-    const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.m_dynamicsConfigurationIdx];
+    if (dt > 0.5) {
+      std::stringstream sstr;
+      sstr << "Lost tracking for object " << object.name() << " skipping";
+      logWarn(sstr.str());
+      continue;
+    }
 
     auto nominalCenter = eig2pcl(object.center());
     int nFound = kdtree.nearestKSearch(
-      nominalCenter, 1, nearestIdx, nearestSqrDist);
+      nominalCenter, nearestIdx.size(), nearestIdx, nearestSqrDist);
 
     if (nFound < 1) {
       std::stringstream sstr;
@@ -530,38 +482,49 @@ void ObjectTracker::updatePosition(std::chrono::high_resolution_clock::time_poin
       continue;
     }
 
-    Eigen::Vector3f center = pcl2eig((*markers)[nearestIdx[0]]);
+    const DynamicsConfiguration& dynConf = m_dynamicsConfigurations[object.m_dynamicsConfigurationIdx];
 
-    // Compute changes:
-    Eigen::Vector3f velocity = (center - object.center()) / dt;
-    float vx = velocity.x();
-    float vy = velocity.y();
-    float vz = velocity.z();
+    bool foundPotentialMarker = false;
+    for (int iMarker = 0; iMarker < nFound; ++iMarker) {
+      Eigen::Vector3f marker = pcl2eig((*markers)[nearestIdx[iMarker]]);
 
-    if (   fabs(vx) < dynConf.maxXVelocity
-        && fabs(vy) < dynConf.maxYVelocity
-        && fabs(vz) < dynConf.maxZVelocity)
-    {
-      object.m_velocity = (center - object.center()) / dt;
-      object.m_lastTransformation = Eigen::Translation3f(center);;
-      object.m_lastValidTransform = stamp;
-      object.m_lastTransformationValid = true;
-    } else {
+      // Compute changes:
+      Eigen::Vector3f velocity = (marker - object.center()) / dt;
+      float vx = velocity.x();
+      float vy = velocity.y();
+      float vz = velocity.z();
+
+      if (   fabs(vx) < dynConf.maxXVelocity
+          && fabs(vy) < dynConf.maxYVelocity
+          && fabs(vz) < dynConf.maxZVelocity)
+      {
+        float dist = (marker - object.center()).norm();
+        long cost = dist * 1000; // cost needs to be an integer -> convert to mm
+        assignment.setCost(iObj, nearestIdx[iMarker], cost);
+        foundPotentialMarker = true;
+      }
+    }
+    if (!foundPotentialMarker) {
       std::stringstream sstr;
-      sstr << "Dynamic check failed for object " << object.name() << std::endl;
-      if (fabs(vx) >= dynConf.maxXVelocity) {
-        sstr << "vx: " << vx << " >= " << dynConf.maxXVelocity << std::endl;
-      }
-      if (fabs(vy) >= dynConf.maxYVelocity) {
-        sstr << "vy: " << vy << " >= " << dynConf.maxYVelocity << std::endl;
-      }
-      if (fabs(vz) >= dynConf.maxZVelocity) {
-        sstr << "vz: " << vz << " >= " << dynConf.maxZVelocity << std::endl;
-      }
+      sstr << "all dynamic check failed for object " << object.name() << std::endl;
       logWarn(sstr.str());
     }
   }
 
+  std::map<size_t, size_t> solution; // maps objectId->markerId
+  long totalCost = assignment.solve(solution);
+
+  for (const auto& s : solution) {
+    auto& object = m_objects[s.first];
+    Eigen::Vector3f marker = pcl2eig((*markers)[s.second]);
+    std::chrono::duration<double> elapsedSeconds = stamp-object.m_lastValidTransform;
+    double dt = elapsedSeconds.count();
+
+    object.m_velocity = (marker - object.center()) / dt;
+    object.m_lastTransformation = Eigen::Translation3f(marker);
+    object.m_lastValidTransform = stamp;
+    object.m_lastTransformationValid = true;
+  }
 }
 
 void ObjectTracker::logWarn(const std::string& msg)
