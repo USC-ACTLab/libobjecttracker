@@ -3,6 +3,9 @@ project(libobjecttracker)
 
 find_package(catkin)
 
+set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD_REQUIRED ON)
+
 ###################################
 ## catkin specific configuration ##
 ###################################
