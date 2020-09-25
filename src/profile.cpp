@@ -12,6 +12,7 @@
 #include <pcl/point_types.h>
 #include <pcl/common/transforms.h>
 #include <pcl/registration/icp.h>
+#include <pcl/search/impl/search.hpp>
 
 #ifdef USE_VICON_DIRECTLY
 // VICON
