@@ -7,6 +7,7 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/transformation_estimation_2D.h>
 // #include <pcl/registration/transformation_estimation_lm.h>
+#include <pcl/search/impl/search.hpp>
 
 #include "assignment.hpp"
 
