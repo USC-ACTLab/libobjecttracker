@@ -1,3 +1,6 @@
+| :exclamation: This repository is deprecated in favor of https://github.com/IMRCLab/librigidbodytracker. |
+|---------------------------------------------------------------------------------------------------------|
+
 [![CMake](https://github.com/USC-ACTLab/libobjecttracker/actions/workflows/cmake.yml/badge.svg?branch=master)](https://github.com/USC-ACTLab/libobjecttracker/actions/workflows/cmake.yml)
 
 # libojecttracker
